@@ -1,0 +1,42 @@
+{
+  "char1": {
+    "name": "캐릭터 (전)",
+    "awakening": true,
+    "cooldown": true,
+    "attacks": "129",
+    "attack_power": "12.42",
+    "critical": "88.08",
+    "strong_hit": "51.91",
+    "double_shot": "22.44",
+    "triple_shot": "21.11",
+    "critical_mult": "1190.41",
+    "strong_hit_mult": "179.03"
+  },
+  "char2": {
+    "name": "캐릭터 (후)",
+    "awakening": true,
+    "cooldown": true,
+    "attacks": "129",
+    "attack_power": "12.42",
+    "critical": "88.08",
+    "strong_hit": "51.91",
+    "double_shot": "22.44",
+    "triple_shot": "21.11",
+    "critical_mult": "1190.41",
+    "strong_hit_mult": "179.03"
+  },
+  "common": {
+    "damage_1": "430",
+    "damage_2": "190",
+    "damage_3": "280",
+    "hit_1": "1",
+    "hit_2": "3",
+    "hit_3": "3",
+    "critical_cd": "2",
+    "skill_cd": "10"
+  },
+  "simulation": {
+    "minutes": "10",
+    "simulations": "10000"
+  }
+}

@@ -5,6 +5,8 @@ import random
 import sys
 import locale
 import tkinter.font  # 추가: 폰트 관련 모듈 명시적 import
+import json
+import os
 
 # 한글 인코딩 설정
 if sys.platform.startswith('linux'):
@@ -22,17 +24,20 @@ class Character:
     DEFAULT_ATTACK_POWER = 12.42
     DEFAULT_P_CRITICAL = 88.08 / 100
     DEFAULT_P_STRONG_HIT = 51.91 / 100
-    DEFAULT_P_DOUBLE_SHOT = 22.36 / 100
+    DEFAULT_P_DOUBLE_SHOT = 22.44 / 100
     DEFAULT_P_TRIPLE_SHOT = 21.11 / 100
-    DEFAULT_CRITICAL_MULTIPLIER = 1184.28 / 100
-    DEFAULT_STRONG_HIT_MULTIPLIER = 158.03 / 100
+    DEFAULT_CRITICAL_MULTIPLIER = 1190.41 / 100
+    DEFAULT_STRONG_HIT_MULTIPLIER = 159.03 / 100
     DEFAULT_AWAKENING = True
     DEFAULT_COOLDOWN = True
     DEFAULT_DAMAGE_SKILL_1 = 430 / 100
-    DEFAULT_DAMAGE_SKILL_2 = 190 * 3 / 100
-    DEFAULT_DAMAGE_SKILL_3 = 840 / 100
+    DEFAULT_DAMAGE_SKILL_2 = 190 / 100
+    DEFAULT_DAMAGE_SKILL_3 = 280 / 100
     DEFAULT_CRITICAL_COOLDOWN = 2
     DEFAULT_SKILL_COOLDOWN = 10
+    DEFAULT_HIT_1 = 1
+    DEFAULT_HIT_2 = 3
+    DEFAULT_HIT_3 = 3
 
     def __init__(self, name="Character"):
         # 기본 설정
@@ -64,6 +69,11 @@ class Character:
         self.critical_cooldown = Character.DEFAULT_CRITICAL_COOLDOWN
         self.skill_cooldown = Character.DEFAULT_SKILL_COOLDOWN
         
+        # 타수 관련
+        self.hit_1 = Character.DEFAULT_HIT_1
+        self.hit_2 = Character.DEFAULT_HIT_2
+        self.hit_3 = Character.DEFAULT_HIT_3
+        
         # 쿨타임 감소 적용
         if self.is_cooldown:
             self.critical_cooldown *= 0.8
@@ -71,12 +81,14 @@ class Character:
     
     def simulate_damage(self, minutes=10, simulations=10000):
         """캐릭터의 데미지를 시뮬레이션하여 분당 데미지(DPM)를 계산"""
+        # hit_1, hit_2, hit_3이 Character에 없다면 1로 처리
         return simulate_attacks_with_critical_and_skill(
             self.attacks_per_minute, minutes, self.p_critical, self.attack_power,
             self.damage_skill_1, self.damage_skill_2, self.damage_skill_3,
             self.critical_multiplier, self.p_strong_hit, self.strong_hit_multiplier, 
             self.awakening_multiplier, self.p_double_shot, self.p_triple_shot,
-            self.critical_cooldown, self.skill_cooldown, simulations
+            self.critical_cooldown, self.skill_cooldown, simulations,
+            hit_1=self.hit_1, hit_2=self.hit_2, hit_3=self.hit_3
         )
     
     def print_stats(self):
@@ -103,126 +115,207 @@ def simulate_attacks_with_critical_and_skill(attacks_per_minute, minutes, p_crit
                                            damage_skill_1=1, damage_skill_2=2, damage_skill_3=5, 
                                            critical_multiplier=2, p_strong_hit=0.1, strong_hit_multiplier=2, awakening_multiplier=1,
                                            p_double_shot=0.1, p_triple_shot=0.05,
-                                           critical_cooldown=2, skill_cooldown=10, simulations=10000):
-    # attacks_per_minute를 정수로 변환 (range() 함수에서 사용하기 위해)
+                                           critical_cooldown=2, skill_cooldown=10, simulations=10000,
+                                           hit_1=1, hit_2=1, hit_3=1):
     attacks_per_minute = int(attacks_per_minute)
-    """
-    치명타 공격과 스킬 공격을 모두 고려한 몬테카를로 시뮬레이션을 통한 데미지 기댓값 계산
-    우선순위: 스킬 > 치명타 > 일반 공격
-    스킬은 쿨타임이 다 되면 무조건 발동
-    
-    Args:
-        attacks_per_minute (int): 1분당 공격 횟수 (k)
-        minutes (int): 공격 시간 (n분)
-        p_critical (float): 치명 확률 (0~1)
-        attack_power (int): 공격력 (기본값: 1)
-        damage_skill_1 (int): 일반 공격당 데미지 (기본값: 1)
-        damage_skill_2 (int): 치명타 공격당 데미지 (기본값: 2)
-        damage_skill_3 (int): 스킬 공격당 데미지 (기본값: 5)
-        critical_multiplier (int): 치명 피해 (기본값: 2)
-        p_strong_hit (float): 강타 확률 (0~1, 기본값: 0.1)
-        strong_hit_multiplier (int): 강타 피해 (기본값: 2)
-        awakening_multiplier (int): 각성 배율 (기본값: 1)
-        p_double_shot (float): 더블샷 확률 (0~1, 기본값: 0.1)
-        p_triple_shot (float): 트리플샷 확률 (0~1, 기본값: 0.05)
-        critical_cooldown (int): 치명타 쿨타임 (초, 기본값: 2)
-        skill_cooldown (int): 스킬 쿨타임 (초, 기본값: 10)
-        simulations (int): 시뮬레이션 횟수
-    
-    Returns:
-        float: 시뮬레이션을 통한 데미지 기댓값 (분당)
-    """
     total_damage = 0
-    
     for _ in range(simulations):
         damage_this_simulation = 0
-        time_since_last_critical = critical_cooldown  # 초기값을 쿨타임으로 설정
-        time_since_last_skill = skill_cooldown  # 초기값을 쿨타임으로 설정
-        
-        # 각 분마다 attacks_per_minute만큼 공격
+        time_since_last_critical = critical_cooldown
+        time_since_last_skill = skill_cooldown
         for minute in range(minutes):
-            # 1분 동안의 공격 횟수를 정확히 attacks_per_minute로 설정
             for attack in range(attacks_per_minute):
-                # 공격 간격 (초 단위)
                 attack_interval = 60 / attacks_per_minute
                 time_since_last_critical += attack_interval
                 time_since_last_skill += attack_interval
-                
-                # 우선순위에 따른 공격 타입 결정
-                # 1. 스킬 쿨타임이 지났으면 무조건 스킬 사용 (우선순위 최고)
+                # 1. 스킬
                 if time_since_last_skill >= skill_cooldown:
-                    # 스킬 공격에 치명 확률 적용
-                    damge_tick = damage_skill_3 * attack_power * awakening_multiplier
-                    # 강타 확률 적용
-                    if random.random() < p_strong_hit:
-                        damge_tick *= strong_hit_multiplier
-                    damage_this_simulation += damge_tick
-                    time_since_last_skill = 0  # 스킬 사용 시 쿨타임 리셋
-                # 2. 스킬이 사용되지 않았고, 치명타 쿨타임이 지났고 치명 확률에 따라 치명타 공격
+                    for _ in range(hit_3):
+                        damge_tick = damage_skill_3 * attack_power * awakening_multiplier
+                        if random.random() < p_strong_hit:
+                            damge_tick *= strong_hit_multiplier
+                        damage_this_simulation += damge_tick
+                    time_since_last_skill = 0
+                # 2. 치명타
                 elif time_since_last_critical >= critical_cooldown and random.random() < p_critical:
-                    damge_tick = damage_skill_2 * critical_multiplier * attack_power * awakening_multiplier
-                    # 강타 확률 적용
-                    if random.random() < p_strong_hit:
-                        damge_tick *= strong_hit_multiplier
-                    damage_this_simulation += damge_tick
-                    time_since_last_critical = 0  # 치명타 발생 시 쿨타임 리셋
-                # 3. 스킬과 치명타가 모두 발생하지 않았으면 일반 공격
+                    for _ in range(hit_2):
+                        damge_tick = damage_skill_2 * critical_multiplier * attack_power * awakening_multiplier
+                        if random.random() < p_strong_hit:
+                            damge_tick *= strong_hit_multiplier
+                        damage_this_simulation += damge_tick
+                    time_since_last_critical = 0
+                # 3. 일반 공격
                 else:
-                    # 더블샷/트리플샷 확률 결정 (둘 다는 불가능)
                     shot_count = 1
                     if random.random() < p_triple_shot:
                         shot_count = 3
                     elif random.random() < p_double_shot:
                         shot_count = 2
-                    
-                    # 각 샷에 대해 데미지 계산
                     for _ in range(shot_count):
-                        # 일반 공격에 치명 확률 적용
-                        damge_tick = damage_skill_1 * attack_power * awakening_multiplier
-                        # 강타 확률 적용
-                        if random.random() < p_strong_hit:
-                            damge_tick *= strong_hit_multiplier
-                        damage_this_simulation += damge_tick
-        
+                        for _ in range(hit_1):
+                            damge_tick = damage_skill_1 * attack_power * awakening_multiplier
+                            if random.random() < p_strong_hit:
+                                damge_tick *= strong_hit_multiplier
+                            damage_this_simulation += damge_tick
         total_damage += damage_this_simulation
-    
     return total_damage / (simulations * minutes)
 
 
-def compare_characters(char1, char2, minutes=10, simulations=10000):
+def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=None):
     """두 캐릭터의 데미지를 비교"""
-    print("=" * 60)
-    print("캐릭터 데미지 비교")
-    print("=" * 60)
+    if text_widget:
+        text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
+        text_widget.insert(tk.END, "캐릭터 데미지 비교\n", "normal")
+        text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
+        
+        # 공통 스탯 (데미지 배율) 먼저 출력
+        text_widget.insert(tk.END, "=== 공통 스탯 ===\n", "normal")
+        text_widget.insert(tk.END, f"일반 공격 데미지 배율: {char1.damage_skill_1:.2f} (타수: {char1.hit_1}) → 총합: {char1.damage_skill_1 * char1.hit_1:.2f}\n", "normal")
+        text_widget.insert(tk.END, f"치명타 공격 데미지 배율: {char1.damage_skill_2:.2f} (타수: {char1.hit_2}) → 총합: {char1.damage_skill_2 * char1.hit_2:.2f}\n", "normal")
+        text_widget.insert(tk.END, f"전용 스킬 데미지 배율: {char1.damage_skill_3:.2f} (타수: {char1.hit_3}) → 총합: {char1.damage_skill_3 * char1.hit_3:.2f}\n", "normal")
+        text_widget.insert(tk.END, "\n", "normal")
+    else:
+        print("=" * 60)
+        print("캐릭터 데미지 비교")
+        print("=" * 60)
+        print("=== 공통 스탯 ===")
+        print(f"일반 공격 데미지 배율: {char1.damage_skill_1:.2f} (타수: {char1.hit_1}) → 총합: {char1.damage_skill_1 * char1.hit_1:.2f}")
+        print(f"치명타 공격 데미지 배율: {char1.damage_skill_2:.2f} (타수: {char1.hit_2}) → 총합: {char1.damage_skill_2 * char1.hit_2:.2f}")
+        print(f"전용 스킬 데미지 배율: {char1.damage_skill_3:.2f} (타수: {char1.hit_3}) → 총합: {char1.damage_skill_3 * char1.hit_3:.2f}")
+        print()
     
     # 각 캐릭터의 스탯 출력
-    char1.print_stats()
-    char2.print_stats()
+    if text_widget:
+        print_stats_to_widget(char1, text_widget, char2, is_second_char=False)  # char1은 증감 표시 안함
+        print_stats_to_widget(char2, text_widget, char1, is_second_char=True)   # char2만 증감 표시
+    else:
+        char1.print_stats()
+        char2.print_stats()
     
     # 데미지 계산
     damage1 = char1.simulate_damage(minutes, simulations)
     damage2 = char2.simulate_damage(minutes, simulations)
     
     # 결과 출력
-    print("=" * 60)
-    print("데미지 비교 결과")
-    print("=" * 60)
-    print(f"{char1.name} DPM: {damage1:,.2f}")
-    print(f"{char2.name} DPM: {damage2:,.2f}")
-    print()
+    if text_widget:
+        text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
+        text_widget.insert(tk.END, "데미지 비교 결과\n", "normal")
+        text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
+        text_widget.insert(tk.END, f"{char1.name} DPM: {damage1:,.2f}\n", "normal")
+        text_widget.insert(tk.END, f"{char2.name} DPM: {damage2:,.2f}\n", "normal")
+        text_widget.insert(tk.END, "\n", "normal")
+    else:
+        print("=" * 60)
+        print("데미지 비교 결과")
+        print("=" * 60)
+        print(f"{char1.name} DPM: {damage1:,.2f}")
+        print(f"{char2.name} DPM: {damage2:,.2f}")
+        print()
     
     if damage1 > damage2:
         diff = damage1 - damage2
         percentage = (diff / damage2) * 100
-        print(f"{char1.name}이 {char2.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 더 강함)")
+        if text_widget:
+            if percentage <= 0.05:
+                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 (의미 없음) ▼\n", "insignificant")
+            else:
+                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 ({percentage:.2f}% 약함) ▼\n", "decrease")
+        else:
+            if percentage <= 0.05:
+                print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 (의미 없음)")
+            else:
+                print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 ({percentage:.2f}% 약함)")
     elif damage2 > damage1:
         diff = damage2 - damage1
         percentage = (diff / damage1) * 100
-        print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 더 강함)")
+        if text_widget:
+            if percentage <= 0.05:
+                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음) ▲\n", "insignificant")
+            else:
+                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함) ▲\n", "increase")
+        else:
+            if percentage <= 0.05:
+                print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음)")
+            else:
+                print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함)")
     else:
-        print("두 캐릭터의 데미지가 동일합니다.")
+        if text_widget:
+            text_widget.insert(tk.END, "두 캐릭터의 데미지가 동일합니다.\n", "normal")
+        else:
+            print("두 캐릭터의 데미지가 동일합니다.")
     
-    print("=" * 60)
+    if text_widget:
+        text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
+    else:
+        print("=" * 60)
+
+
+def print_stat_with_comparison(text_widget, label, value, compare_char, compare_attr, format_str="{:.2f}", reverse=False, is_second_char=False, multiply_compare=1):
+    """능력치를 비교하여 출력하는 헬퍼 함수"""
+    stat_text = f"{label}: {format_str.format(value)}"
+    if compare_char and is_second_char:  # 캐릭터 (후)에만 증감 표시
+        compare_value = getattr(compare_char, compare_attr) * multiply_compare
+        if reverse:
+            # 쿨타임처럼 낮을수록 좋은 경우
+            if value < compare_value:
+                stat_text += " ▲"
+                text_widget.insert(tk.END, stat_text + "\n", "increase")
+            elif value > compare_value:
+                stat_text += " ▼"
+                text_widget.insert(tk.END, stat_text + "\n", "decrease")
+            else:
+                text_widget.insert(tk.END, stat_text + "\n", "normal")
+        else:
+            # 일반적으로 높을수록 좋은 경우
+            if value > compare_value:
+                stat_text += " ▲"
+                text_widget.insert(tk.END, stat_text + "\n", "increase")
+            elif value < compare_value:
+                stat_text += " ▼"
+                text_widget.insert(tk.END, stat_text + "\n", "decrease")
+            else:
+                text_widget.insert(tk.END, stat_text + "\n", "normal")
+    else:
+        text_widget.insert(tk.END, stat_text + "\n", "normal")
+
+
+def print_stats_to_widget(char, text_widget, compare_char=None, is_second_char=False):
+    """캐릭터의 스탯을 Text 위젯에 출력 (비교용)"""
+    text_widget.insert(tk.END, f"=== {char.name} 스탯 ===\n", "normal")
+    
+    # 각성 여부 표시
+    awakening_status = "각성 활성화" if char.is_awakening else "각성 비활성화"
+    if compare_char and is_second_char:
+        # 캐릭터 (후)에서만 비교하여 증감 표시
+        if char.is_awakening > compare_char.is_awakening:
+            awakening_tag = "increase"
+            awakening_status += " ▲"
+        elif char.is_awakening < compare_char.is_awakening:
+            awakening_tag = "decrease"
+            awakening_status += " ▼"
+        else:
+            awakening_tag = "normal"
+    else:
+        # 캐릭터 (전)에서는 항상 검은색으로 표시
+        awakening_tag = "normal"
+    text_widget.insert(tk.END, f"각성 상태: {awakening_status}\n", awakening_tag)
+    
+    # 각 능력치 출력 (높을수록 좋은 것들)
+    print_stat_with_comparison(text_widget, "공격 속도", char.attacks_per_minute, compare_char, "attacks_per_minute", "{}회/분", is_second_char=is_second_char)
+    print_stat_with_comparison(text_widget, "공격력", char.attack_power, compare_char, "attack_power", "{}M", is_second_char=is_second_char)
+    print_stat_with_comparison(text_widget, "치명 확률", char.p_critical * 100, compare_char, "p_critical", "{:.2f}%", reverse=False, is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "강타 확률", char.p_strong_hit * 100, compare_char, "p_strong_hit", "{:.2f}%", reverse=False, is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "더블샷 확률", char.p_double_shot * 100, compare_char, "p_double_shot", "{:.2f}%", reverse=False, is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "트리플샷 확률", char.p_triple_shot * 100, compare_char, "p_triple_shot", "{:.2f}%", reverse=False, is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "치명 피해", char.critical_multiplier * 100, compare_char, "critical_multiplier", "{:.2f}%", is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "강타 피해", char.strong_hit_multiplier * 100, compare_char, "strong_hit_multiplier", "{:.2f}%", is_second_char=is_second_char, multiply_compare=100)
+    print_stat_with_comparison(text_widget, "각성 배율", char.awakening_multiplier, compare_char, "awakening_multiplier", "{:.1f}", is_second_char=is_second_char)
+    
+    # 쿨타임 (낮을수록 좋음)
+    print_stat_with_comparison(text_widget, "치명타 쿨타임", char.critical_cooldown, compare_char, "critical_cooldown", "{:.1f}초", reverse=True, is_second_char=is_second_char)
+    print_stat_with_comparison(text_widget, "스킬 쿨타임", char.skill_cooldown, compare_char, "skill_cooldown", "{:.1f}초", reverse=True, is_second_char=is_second_char)
+    
+    text_widget.insert(tk.END, "\n", "normal")
 
 
 class CharacterGUI:
@@ -246,6 +339,12 @@ class CharacterGUI:
         style.configure("Korean.TButton", font=self.text_font)
         
         self.create_widgets()
+        
+        # Text 위젯 색상 태그 설정
+        self.setup_text_tags()
+        
+        # 프로그램 시작 시 JSON 파일이 있으면 자동으로 불러오기
+        self.root.after(100, self.auto_load_settings)
     
     def setup_korean_font(self):
         """한글 폰트 설정 (WSL2 등 환경 자동 대응)"""
@@ -286,44 +385,240 @@ class CharacterGUI:
         except Exception as e:
             print(f"폰트 설정 중 오류: {e}")
             self.text_font = ("TkDefaultFont", 10)
+    
+    def setup_text_tags(self):
+        """Text 위젯의 색상 태그 설정"""
+        self.result_text.tag_configure("increase", foreground="blue")
+        self.result_text.tag_configure("decrease", foreground="red")
+        self.result_text.tag_configure("normal", foreground="black")
+        self.result_text.tag_configure("insignificant", foreground="gray")
+    
+    def save_settings(self):
+        """현재 설정을 JSON 파일로 저장"""
+        settings = {
+            "char1": {
+                "name": self.char1_name_var.get(),
+                "awakening": self.char1_awakening_var.get(),
+                "cooldown": self.char1_cooldown_var.get(),
+                "attacks": self.char1_attacks_var.get(),
+                "attack_power": self.char1_attack_power_var.get(),
+                "critical": self.char1_critical_var.get(),
+                "strong_hit": self.char1_strong_hit_var.get(),
+                "double_shot": self.char1_double_shot_var.get(),
+                "triple_shot": self.char1_triple_shot_var.get(),
+                "critical_mult": self.char1_critical_mult_var.get(),
+                "strong_hit_mult": self.char1_strong_hit_mult_var.get()
+            },
+            "char2": {
+                "name": self.char2_name_var.get(),
+                "awakening": self.char2_awakening_var.get(),
+                "cooldown": self.char2_cooldown_var.get(),
+                "attacks": self.char2_attacks_var.get(),
+                "attack_power": self.char2_attack_power_var.get(),
+                "critical": self.char2_critical_var.get(),
+                "strong_hit": self.char2_strong_hit_var.get(),
+                "double_shot": self.char2_double_shot_var.get(),
+                "triple_shot": self.char2_triple_shot_var.get(),
+                "critical_mult": self.char2_critical_mult_var.get(),
+                "strong_hit_mult": self.char2_strong_hit_mult_var.get()
+            },
+            "common": {
+                "damage_1": self.damage_1_var.get(),
+                "damage_2": self.damage_2_var.get(),
+                "damage_3": self.damage_3_var.get(),
+                "hit_1": self.hit_1_var.get(),
+                "hit_2": self.hit_2_var.get(),
+                "hit_3": self.hit_3_var.get(),
+                "critical_cd": self.critical_cd_var.get(),
+                "skill_cd": self.skill_cd_var.get()
+            },
+            "simulation": {
+                "minutes": self.minutes_var.get(),
+                "simulations": self.simulations_var.get()
+            }
+        }
+        
+        try:
+            with open("settings.json", "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            print("설정이 저장되었습니다.")
+        except Exception as e:
+            print(f"설정 저장 중 오류: {e}")
+    
+    def load_settings(self):
+        """JSON 파일에서 설정을 불러옴"""
+        if not os.path.exists("settings.json"):
+            return False
+        
+        try:
+            with open("settings.json", "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            
+            # 캐릭터 1 설정 불러오기
+            if "char1" in settings:
+                char1 = settings["char1"]
+                self.char1_name_var.set(char1.get("name", "캐릭터 (전)"))
+                self.char1_awakening_var.set(char1.get("awakening", True))
+                self.char1_cooldown_var.set(char1.get("cooldown", True))
+                self.char1_attacks_var.set(char1.get("attacks", "129"))
+                self.char1_attack_power_var.set(char1.get("attack_power", "12.42"))
+                self.char1_critical_var.set(char1.get("critical", "88.08"))
+                self.char1_strong_hit_var.set(char1.get("strong_hit", "51.91"))
+                self.char1_double_shot_var.set(char1.get("double_shot", "22.36"))
+                self.char1_triple_shot_var.set(char1.get("triple_shot", "21.11"))
+                self.char1_critical_mult_var.set(char1.get("critical_mult", "1184.28"))
+                self.char1_strong_hit_mult_var.set(char1.get("strong_hit_mult", "158.03"))
+            
+            # 캐릭터 2 설정 불러오기
+            if "char2" in settings:
+                char2 = settings["char2"]
+                self.char2_name_var.set(char2.get("name", "캐릭터 (후)"))
+                self.char2_awakening_var.set(char2.get("awakening", True))
+                self.char2_cooldown_var.set(char2.get("cooldown", True))
+                self.char2_attacks_var.set(char2.get("attacks", "129"))
+                self.char2_attack_power_var.set(char2.get("attack_power", "12.42"))
+                self.char2_critical_var.set(char2.get("critical", "88.08"))
+                self.char2_strong_hit_var.set(char2.get("strong_hit", "51.91"))
+                self.char2_double_shot_var.set(char2.get("double_shot", "22.36"))
+                self.char2_triple_shot_var.set(char2.get("triple_shot", "21.11"))
+                self.char2_critical_mult_var.set(char2.get("critical_mult", "1184.28"))
+                self.char2_strong_hit_mult_var.set(char2.get("strong_hit_mult", "158.03"))
+            
+            # 공통 설정 불러오기
+            if "common" in settings:
+                common = settings["common"]
+                self.damage_1_var.set(common.get("damage_1", str(round(Character.DEFAULT_DAMAGE_SKILL_1*100, 2))))
+                self.damage_2_var.set(common.get("damage_2", str(round(Character.DEFAULT_DAMAGE_SKILL_2*100, 2))))
+                self.damage_3_var.set(common.get("damage_3", str(round(Character.DEFAULT_DAMAGE_SKILL_3*100, 2))))
+                self.hit_1_var.set(common.get("hit_1", str(Character.DEFAULT_HIT_1)))
+                self.hit_2_var.set(common.get("hit_2", str(Character.DEFAULT_HIT_2)))
+                self.hit_3_var.set(common.get("hit_3", str(Character.DEFAULT_HIT_3)))
+                self.critical_cd_var.set(common.get("critical_cd", str(Character.DEFAULT_CRITICAL_COOLDOWN)))
+                self.skill_cd_var.set(common.get("skill_cd", str(Character.DEFAULT_SKILL_COOLDOWN)))
+            
+            # 시뮬레이션 설정 불러오기
+            if "simulation" in settings:
+                sim = settings["simulation"]
+                self.minutes_var.set(sim.get("minutes", "10"))
+                self.simulations_var.set(sim.get("simulations", "10000"))
+            
+            print("설정을 불러왔습니다.")
+            return True
+            
+        except Exception as e:
+            print(f"설정 불러오기 중 오류: {e}")
+            return False
+    
+    def auto_load_settings(self):
+        """프로그램 시작 시 자동으로 설정 파일 불러오기"""
+        if self.load_settings():
+            print("프로그램 시작 시 설정 파일을 자동으로 불러왔습니다.")
+        # 설정 불러오기 후 초기값 저장 (JSON에서 불러온 값이 초기값이 되도록)
+        self.save_initial_values()
+    
+    def limit_probability(self, char_prefix, prob_type):
+        """확률 값을 100% 이하로 제한하는 함수"""
+        try:
+            var_name = f"{char_prefix}_{prob_type}_var"
+            var = getattr(self, var_name)
+            current_value = float(var.get())
+            
+            if current_value > 100:
+                var.set("100.00")
+                print(f"{prob_type} 확률이 100%를 초과하여 100%로 제한되었습니다.")
+        except ValueError:
+            # 숫자가 아닌 값이 입력된 경우 기본값으로 설정
+            default_values = {
+                'critical': round(Character.DEFAULT_P_CRITICAL * 100, 2),
+                'strong_hit': round(Character.DEFAULT_P_STRONG_HIT * 100, 2),
+                'double_shot': round(Character.DEFAULT_P_DOUBLE_SHOT * 100, 2),
+                'triple_shot': round(Character.DEFAULT_P_TRIPLE_SHOT * 100, 2)
+            }
+            var.set(str(default_values.get(prob_type, "0.00")))
+            print(f"{prob_type} 확률에 잘못된 값이 입력되어 기본값으로 설정되었습니다.")
         
     def create_widgets(self):
         # 메인 프레임
-        main_frame = ttk.Frame(self.root, padding="5")
+        main_frame = ttk.Frame(self.root)
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=0)
-        main_frame.columnconfigure(2, weight=1)
+        for i in range(2):
+            main_frame.grid_columnconfigure(i, minsize=140)
 
         # 캐릭터 1 프레임
         char1_frame = ttk.LabelFrame(main_frame, text="캐릭터 1", padding="2", style="Korean.TLabelframe")
-        char1_frame.grid(row=1, column=0, sticky=tk.NW, padx=0, pady=0)
-        # 중간 패딩 (빈 라벨)
-        ttk.Label(main_frame, text="", width=2).grid(row=1, column=1)
+        char1_frame.grid(row=0, column=0, sticky=tk.NW, padx=(2, 8), pady=(4, 0))
         # 캐릭터 2 프레임
         char2_frame = ttk.LabelFrame(main_frame, text="캐릭터 2", padding="2", style="Korean.TLabelframe")
-        char2_frame.grid(row=1, column=2, sticky=tk.NW, padx=0, pady=0)
+        char2_frame.grid(row=0, column=1, sticky=tk.NW, padx=0, pady=(4, 0))
 
-        # 설정 프레임
-        settings_frame = ttk.LabelFrame(main_frame, text="시뮬레이션 설정", padding="2", style="Korean.TLabelframe")
-        settings_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 2), padx=0)
+        # 공통 설정 프레임 (2열 4행)
+        common_frame = ttk.LabelFrame(main_frame, text="공통 설정", padding="2", style="Korean.TLabelframe")
+        common_frame.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(10, 2), padx=(2, 2))
+        entry_width = 12
+        entry_justify = 'right'
+        entry_padx_1 = (4, 8)
+        entry_padx_2 = (31, 2)
+        label_padx_1 = (2, 3)
+        label_padx_2 = (14, 2)
+        # 1행
+        ttk.Label(common_frame, text="일반 공격 배율 (%):", font=self.text_font).grid(row=0, column=0, sticky=tk.W, padx=label_padx_1)
+        self.damage_1_var = tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_1*100, 2)))
+        ttk.Entry(common_frame, textvariable=self.damage_1_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1)
+        ttk.Label(common_frame, text="일반 공격 타수:", font=self.text_font).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2)
+        self.hit_1_var = tk.StringVar(value="1")
+        ttk.Entry(common_frame, textvariable=self.hit_1_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=0, column=3, sticky=tk.W, padx=entry_padx_2)
+        # 2행
+        ttk.Label(common_frame, text="치명타 공격 배율 (%):", font=self.text_font).grid(row=1, column=0, sticky=tk.W, padx=label_padx_1)
+        self.damage_2_var = tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_2*100, 2)))
+        ttk.Entry(common_frame, textvariable=self.damage_2_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=1, column=1, sticky=tk.W, padx=entry_padx_1)
+        ttk.Label(common_frame, text="치명타 공격 타수:", font=self.text_font).grid(row=1, column=2, sticky=tk.W, padx=label_padx_2)
+        self.hit_2_var = tk.StringVar(value="1")
+        ttk.Entry(common_frame, textvariable=self.hit_2_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=1, column=3, sticky=tk.W, padx=entry_padx_2)
+        # 3행
+        ttk.Label(common_frame, text="전용 스킬 배율 (%):", font=self.text_font).grid(row=2, column=0, sticky=tk.W, padx=label_padx_1)
+        self.damage_3_var = tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_3*100, 2)))
+        ttk.Entry(common_frame, textvariable=self.damage_3_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=2, column=1, sticky=tk.W, padx=entry_padx_1)
+        ttk.Label(common_frame, text="전용 스킬 타수:", font=self.text_font).grid(row=2, column=2, sticky=tk.W, padx=label_padx_2)
+        self.hit_3_var = tk.StringVar(value="1")
+        ttk.Entry(common_frame, textvariable=self.hit_3_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=2, column=3, sticky=tk.W, padx=entry_padx_2)
+        # 4행
+        ttk.Label(common_frame, text="치명타 쿨타임 (초):", font=self.text_font).grid(row=3, column=0, sticky=tk.W, padx=label_padx_1)
+        self.critical_cd_var = tk.StringVar(value=str(Character.DEFAULT_CRITICAL_COOLDOWN))
+        ttk.Entry(common_frame, textvariable=self.critical_cd_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=3, column=1, sticky=tk.W, padx=entry_padx_1)
+        ttk.Label(common_frame, text="스킬 쿨타임 (초):", font=self.text_font).grid(row=3, column=2, sticky=tk.W, padx=label_padx_2)
+        self.skill_cd_var = tk.StringVar(value=str(Character.DEFAULT_SKILL_COOLDOWN))
+        ttk.Entry(common_frame, textvariable=self.skill_cd_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=3, column=3, sticky=tk.W, padx=entry_padx_2)
 
-        # 시뮬레이션 설정
-        ttk.Label(settings_frame, text="시뮬레이션 시간 (분):", font=self.text_font).grid(row=0, column=0, sticky=tk.W)
+        # 시뮬레이션 설정 프레임
+        simulation_frame = ttk.LabelFrame(main_frame, text="시뮬레이션 설정", padding="2", style="Korean.TLabelframe")
+        simulation_frame.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(2, 2), padx=(2, 2))
+        ttk.Label(simulation_frame, text="시뮬레이션 시간 (분):", font=self.text_font).grid(row=0, column=0, sticky=tk.W, padx=(2, 6))
         self.minutes_var = tk.StringVar(value="10")
-        ttk.Entry(settings_frame, textvariable=self.minutes_var, width=12, font=self.text_font).grid(row=0, column=1, padx=(4, 23))
-        ttk.Label(settings_frame, text="시뮬레이션 횟수:", font=self.text_font).grid(row=0, column=2, sticky=tk.W)
+        ttk.Entry(simulation_frame, textvariable=self.minutes_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1)
+        ttk.Label(simulation_frame, text="시뮬레이션 횟수:", font=self.text_font).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2)
         self.simulations_var = tk.StringVar(value="10000")
-        ttk.Entry(settings_frame, textvariable=self.simulations_var, width=12, font=self.text_font).grid(row=0, column=3, padx=(31.5, 0))
+        ttk.Entry(simulation_frame, textvariable=self.simulations_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=0, column=3, sticky=tk.W, padx=(35, 2))
 
-        # 버튼 프레임
+        # 버튼 프레임 (2줄 3열)
+        button_width = 18
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=3, pady=10)
+        button_frame.grid(row=4, column=0, columnspan=4, pady=10)
+        
+        # 버튼들을 2줄 3열로 배치 (일정한 너비와 간격)
+        # 첫 번째 줄: 기본 설정 관련
+        ttk.Button(button_frame, text="초기 값으로 돌리기", command=self.set_default_values, style="Korean.TButton", width=button_width).grid(row=0, column=0, padx=8, pady=4)
+        ttk.Button(button_frame, text="설정 저장", command=self.save_settings, style="Korean.TButton", width=button_width).grid(row=0, column=1, padx=8, pady=4)
+        ttk.Button(button_frame, text="설정 불러오기", command=self.load_settings, style="Korean.TButton", width=button_width).grid(row=0, column=2, padx=8, pady=4)
+        
+        # 두 번째 줄: 복사 및 계산 관련
+        ttk.Button(button_frame, text="캐릭터 1→2 복사", command=self.set_char1_to_char2, style="Korean.TButton", width=button_width).grid(row=1, column=0, padx=8, pady=4)
+        ttk.Button(button_frame, text="캐릭터 2→1 복사", command=self.set_char2_to_char1, style="Korean.TButton", width=button_width).grid(row=1, column=1, padx=8, pady=4)
+        ttk.Button(button_frame, text="데미지 비교", command=self.compare_damage, style="Korean.TButton", width=button_width).grid(row=1, column=2, padx=8, pady=4)
 
         # 결과 프레임
         result_frame = ttk.LabelFrame(main_frame, text="결과", padding="2", style="Korean.TLabelframe")
-        result_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(2, 0), padx=0)
-        self.result_text = tk.Text(result_frame, height=25, width=65, wrap=tk.WORD, font=self.text_font)
+        result_frame.grid(row=5, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(0, 0), padx=(2, 2))
+        self.result_text = tk.Text(result_frame, height=30, width=67, wrap=tk.WORD, font=self.text_font)
         scrollbar = ttk.Scrollbar(result_frame, orient=tk.VERTICAL, command=self.result_text.yview)
         self.result_text.configure(yscrollcommand=scrollbar.set)
         self.result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -335,145 +630,154 @@ class CharacterGUI:
         # 캐릭터 2 위젯 생성
         self.create_character_widgets(char2_frame, "char2")
         
-        # 버튼들
-        ttk.Button(button_frame, text="기본값으로 설정", command=self.set_default_values, style="Korean.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="캐릭터 1→2 복사", command=self.set_char2_default, style="Korean.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="캐릭터 2→1 복사", command=self.set_char1_default, style="Korean.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="데미지 비교", command=self.compare_damage, style="Korean.TButton").pack(side=tk.LEFT, padx=5)
-        
-        # 초기값 설정
-        self.set_default_values()
-        
         # 창이 내용에 맞게 자동으로 크기 조정되도록 설정
         self.root.update_idletasks()
         self.root.geometry("")  # 내용에 맞게 자동 조정
         
     def create_character_widgets(self, parent, char_prefix):
         # 캐릭터 이름
-        ttk.Label(parent, text="캐릭터 이름:", font=self.text_font).grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="캐릭터 이름:", font=self.text_font).grid(row=0, column=0, sticky=tk.W, padx=(2, 24))
         if char_prefix == "char1":
             setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터 (전)"))
         else:
             setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터 (후)"))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_name_var"), width=10, font=self.text_font).grid(row=0, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_name_var"), width=10, font=self.text_font, justify='right').grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         # 체크박스들
         setattr(self, f"{char_prefix}_awakening_var", tk.BooleanVar(value=Character.DEFAULT_AWAKENING))
-        ttk.Checkbutton(parent, text="각성", variable=getattr(self, f"{char_prefix}_awakening_var"), style="Korean.TCheckbutton").grid(row=1, column=0, sticky=(tk.W, tk.E), pady=2)
+        ttk.Checkbutton(parent, text="각성", variable=getattr(self, f"{char_prefix}_awakening_var"), style="Korean.TCheckbutton").grid(row=1, column=0, sticky=(tk.W, tk.E), padx=(2, 24))
         
         setattr(self, f"{char_prefix}_cooldown_var", tk.BooleanVar(value=Character.DEFAULT_COOLDOWN))
-        ttk.Checkbutton(parent, text="쿨타임 감소", variable=getattr(self, f"{char_prefix}_cooldown_var"), style="Korean.TCheckbutton").grid(row=1, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Checkbutton(parent, text="쿨타임 감소", variable=getattr(self, f"{char_prefix}_cooldown_var"), style="Korean.TCheckbutton").grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         # 공격 관련
         row = 2
-        ttk.Label(parent, text="공격 속도 (회/분):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="공격 속도 (회/분):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_attacks_var", tk.StringVar(value=str(Character.DEFAULT_ATTACKS_PER_MINUTE)))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_attacks_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_attacks_var"), width=6, font=self.text_font, justify='right').grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         row += 1
-        ttk.Label(parent, text="공격력 (M):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="공격력 (M):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_attack_power_var", tk.StringVar(value=str(Character.DEFAULT_ATTACK_POWER)))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_attack_power_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_attack_power_var"), width=6, font=self.text_font, justify='right').grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         # 확률 관련
         row += 1
-        ttk.Label(parent, text="치명 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="치명 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_critical_var", tk.StringVar(value=str(round(Character.DEFAULT_P_CRITICAL*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        critical_entry = ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_var"), width=6, font=self.text_font, justify='right')
+        critical_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
+        # 치명 확률 입력 제한 (100% 초과 시 100%로 제한)
+        critical_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'critical'))
         
         row += 1
-        ttk.Label(parent, text="강타 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="강타 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_strong_hit_var", tk.StringVar(value=str(round(Character.DEFAULT_P_STRONG_HIT*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        strong_hit_entry = ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_var"), width=6, font=self.text_font, justify='right')
+        strong_hit_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
+        strong_hit_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'strong_hit'))
         
         row += 1
-        ttk.Label(parent, text="더블샷 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="더블샷 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_double_shot_var", tk.StringVar(value=str(round(Character.DEFAULT_P_DOUBLE_SHOT*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_double_shot_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        double_shot_entry = ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_double_shot_var"), width=6, font=self.text_font, justify='right')
+        double_shot_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
+        double_shot_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'double_shot'))
         
         row += 1
-        ttk.Label(parent, text="트리플샷 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="트리플샷 확률 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_triple_shot_var", tk.StringVar(value=str(round(Character.DEFAULT_P_TRIPLE_SHOT*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_triple_shot_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        triple_shot_entry = ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_triple_shot_var"), width=6, font=self.text_font, justify='right')
+        triple_shot_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
+        triple_shot_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'triple_shot'))
         
         # 배율 관련
         row += 1
-        ttk.Label(parent, text="치명 피해 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="치명 피해 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_critical_mult_var", tk.StringVar(value=str(round(Character.DEFAULT_CRITICAL_MULTIPLIER*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_mult_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_mult_var"), width=6, font=self.text_font, justify='right').grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         row += 1
-        ttk.Label(parent, text="강타 피해 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Label(parent, text="강타 피해 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
         setattr(self, f"{char_prefix}_strong_hit_mult_var", tk.StringVar(value=str(round(Character.DEFAULT_STRONG_HIT_MULTIPLIER*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_mult_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_mult_var"), width=6, font=self.text_font, justify='right').grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
-        # 데미지 배율
-        row += 1
-        ttk.Label(parent, text="일반 공격 배율 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
-        setattr(self, f"{char_prefix}_damage_1_var", tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_1*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_damage_1_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
-        
-        row += 1
-        ttk.Label(parent, text="치명타 공격 배율 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
-        setattr(self, f"{char_prefix}_damage_2_var", tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_2*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_damage_2_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
-        
-        row += 1
-        ttk.Label(parent, text="전용 스킬 배율 (%):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
-        setattr(self, f"{char_prefix}_damage_3_var", tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_3*100, 2))))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_damage_3_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
-        
-        # 쿨타임
-        row += 1
-        ttk.Label(parent, text="치명타 쿨타임 (초):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
-        setattr(self, f"{char_prefix}_critical_cd_var", tk.StringVar(value=str(Character.DEFAULT_CRITICAL_COOLDOWN)))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_cd_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
-        
-        row += 1
-        ttk.Label(parent, text="스킬 쿨타임 (초):", font=self.text_font).grid(row=row, column=0, sticky=tk.W, pady=2)
-        setattr(self, f"{char_prefix}_skill_cd_var", tk.StringVar(value=str(Character.DEFAULT_SKILL_COOLDOWN)))
-        ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_skill_cd_var"), width=6, font=self.text_font).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
-    
+
+    def save_initial_values(self):
+        self.initial_values = {
+            'char1_name': self.char1_name_var.get(),
+            'char1_awakening': self.char1_awakening_var.get(),
+            'char1_cooldown': self.char1_cooldown_var.get(),
+            'char1_attacks': self.char1_attacks_var.get(),
+            'char1_attack_power': self.char1_attack_power_var.get(),
+            'char1_critical': self.char1_critical_var.get(),
+            'char1_strong_hit': self.char1_strong_hit_var.get(),
+            'char1_double_shot': self.char1_double_shot_var.get(),
+            'char1_triple_shot': self.char1_triple_shot_var.get(),
+            'char1_critical_mult': self.char1_critical_mult_var.get(),
+            'char1_strong_hit_mult': self.char1_strong_hit_mult_var.get(),
+            'char2_name': self.char2_name_var.get(),
+            'char2_awakening': self.char2_awakening_var.get(),
+            'char2_cooldown': self.char2_cooldown_var.get(),
+            'char2_attacks': self.char2_attacks_var.get(),
+            'char2_attack_power': self.char2_attack_power_var.get(),
+            'char2_critical': self.char2_critical_var.get(),
+            'char2_strong_hit': self.char2_strong_hit_var.get(),
+            'char2_double_shot': self.char2_double_shot_var.get(),
+            'char2_triple_shot': self.char2_triple_shot_var.get(),
+            'char2_critical_mult': self.char2_critical_mult_var.get(),
+            'char2_strong_hit_mult': self.char2_strong_hit_mult_var.get(),
+            'damage_1': self.damage_1_var.get(),
+            'damage_2': self.damage_2_var.get(),
+            'damage_3': self.damage_3_var.get(),
+            'hit_1': self.hit_1_var.get(),
+            'hit_2': self.hit_2_var.get(),
+            'hit_3': self.hit_3_var.get(),
+            'critical_cd': self.critical_cd_var.get(),
+            'skill_cd': self.skill_cd_var.get(),
+            'minutes': self.minutes_var.get(),
+            'simulations': self.simulations_var.get()
+        }
+
     def set_default_values(self):
-        """Character 클래스의 원래 기본값으로 설정"""
-        # 기본 캐릭터 이름 설정
-        self.char1_name_var.set("캐릭터 (전)")
-        self.char2_name_var.set("캐릭터 (후)")
-        
-        # Character 클래스의 기본값으로 설정
-        self.set_character_to_default("char1")
-        self.set_character_to_default("char2")
-    
-    def set_character_to_default(self, char_prefix):
-        """캐릭터를 Character 클래스의 기본값으로 설정"""
-        # 기본 설정
-        getattr(self, f"{char_prefix}_awakening_var").set(Character.DEFAULT_AWAKENING)
-        getattr(self, f"{char_prefix}_cooldown_var").set(Character.DEFAULT_COOLDOWN)
-        
-        # 공격 관련
-        getattr(self, f"{char_prefix}_attacks_var").set(str(Character.DEFAULT_ATTACKS_PER_MINUTE))
-        getattr(self, f"{char_prefix}_attack_power_var").set(str(Character.DEFAULT_ATTACK_POWER))
-        
-        # 확률 관련
-        getattr(self, f"{char_prefix}_critical_var").set(str(round(Character.DEFAULT_P_CRITICAL*100, 2)))
-        getattr(self, f"{char_prefix}_strong_hit_var").set(str(round(Character.DEFAULT_P_STRONG_HIT*100, 2)))
-        getattr(self, f"{char_prefix}_double_shot_var").set(str(round(Character.DEFAULT_P_DOUBLE_SHOT*100, 2)))
-        getattr(self, f"{char_prefix}_triple_shot_var").set(str(round(Character.DEFAULT_P_TRIPLE_SHOT*100, 2)))
-        
-        # 배율 관련
-        getattr(self, f"{char_prefix}_critical_mult_var").set(str(round(Character.DEFAULT_CRITICAL_MULTIPLIER*100, 2)))
-        getattr(self, f"{char_prefix}_strong_hit_mult_var").set(str(round(Character.DEFAULT_STRONG_HIT_MULTIPLIER*100, 2)))
-        
-        # 데미지 배율
-        getattr(self, f"{char_prefix}_damage_1_var").set(str(round(Character.DEFAULT_DAMAGE_SKILL_1*100, 2)))
-        getattr(self, f"{char_prefix}_damage_2_var").set(str(round(Character.DEFAULT_DAMAGE_SKILL_2*100, 2)))
-        getattr(self, f"{char_prefix}_damage_3_var").set(str(round(Character.DEFAULT_DAMAGE_SKILL_3*100, 2)))
-        
-        # 쿨타임
-        getattr(self, f"{char_prefix}_critical_cd_var").set(str(Character.DEFAULT_CRITICAL_COOLDOWN))
-        getattr(self, f"{char_prefix}_skill_cd_var").set(str(Character.DEFAULT_SKILL_COOLDOWN))
-        
-    def set_char1_default(self):
+        """프로그램 시작 시점의 값으로 복원"""
+        vals = getattr(self, 'initial_values', None)
+        if vals is None:
+            return
+        self.char1_name_var.set(vals['char1_name'])
+        self.char1_awakening_var.set(vals['char1_awakening'])
+        self.char1_cooldown_var.set(vals['char1_cooldown'])
+        self.char1_attacks_var.set(vals['char1_attacks'])
+        self.char1_attack_power_var.set(vals['char1_attack_power'])
+        self.char1_critical_var.set(vals['char1_critical'])
+        self.char1_strong_hit_var.set(vals['char1_strong_hit'])
+        self.char1_double_shot_var.set(vals['char1_double_shot'])
+        self.char1_triple_shot_var.set(vals['char1_triple_shot'])
+        self.char1_critical_mult_var.set(vals['char1_critical_mult'])
+        self.char1_strong_hit_mult_var.set(vals['char1_strong_hit_mult'])
+        self.char2_name_var.set(vals['char2_name'])
+        self.char2_awakening_var.set(vals['char2_awakening'])
+        self.char2_cooldown_var.set(vals['char2_cooldown'])
+        self.char2_attacks_var.set(vals['char2_attacks'])
+        self.char2_attack_power_var.set(vals['char2_attack_power'])
+        self.char2_critical_var.set(vals['char2_critical'])
+        self.char2_strong_hit_var.set(vals['char2_strong_hit'])
+        self.char2_double_shot_var.set(vals['char2_double_shot'])
+        self.char2_triple_shot_var.set(vals['char2_triple_shot'])
+        self.char2_critical_mult_var.set(vals['char2_critical_mult'])
+        self.char2_strong_hit_mult_var.set(vals['char2_strong_hit_mult'])
+        self.damage_1_var.set(vals['damage_1'])
+        self.damage_2_var.set(vals['damage_2'])
+        self.damage_3_var.set(vals['damage_3'])
+        self.hit_1_var.set(vals['hit_1'])
+        self.hit_2_var.set(vals['hit_2'])
+        self.hit_3_var.set(vals['hit_3'])
+        self.critical_cd_var.set(vals['critical_cd'])
+        self.skill_cd_var.set(vals['skill_cd'])
+        self.minutes_var.set(vals['minutes'])
+        self.simulations_var.set(vals['simulations'])
+
+    def set_char2_to_char1(self):
         """캐릭터 2의 정보를 캐릭터 1로 복사 (이름 제외)"""
         # 이름은 복사하지 않음
         self.char1_awakening_var.set(self.char2_awakening_var.get())
@@ -486,13 +790,8 @@ class CharacterGUI:
         self.char1_triple_shot_var.set(self.char2_triple_shot_var.get())
         self.char1_critical_mult_var.set(self.char2_critical_mult_var.get())
         self.char1_strong_hit_mult_var.set(self.char2_strong_hit_mult_var.get())
-        self.char1_damage_1_var.set(self.char2_damage_1_var.get())
-        self.char1_damage_2_var.set(self.char2_damage_2_var.get())
-        self.char1_damage_3_var.set(self.char2_damage_3_var.get())
-        self.char1_critical_cd_var.set(self.char2_critical_cd_var.get())
-        self.char1_skill_cd_var.set(self.char2_skill_cd_var.get())
         
-    def set_char2_default(self):
+    def set_char1_to_char2(self):
         """캐릭터 1의 정보를 캐릭터 2로 복사 (이름 제외)"""
         # 이름은 복사하지 않음
         self.char2_awakening_var.set(self.char1_awakening_var.get())
@@ -505,11 +804,6 @@ class CharacterGUI:
         self.char2_triple_shot_var.set(self.char1_triple_shot_var.get())
         self.char2_critical_mult_var.set(self.char1_critical_mult_var.get())
         self.char2_strong_hit_mult_var.set(self.char1_strong_hit_mult_var.get())
-        self.char2_damage_1_var.set(self.char1_damage_1_var.get())
-        self.char2_damage_2_var.set(self.char1_damage_2_var.get())
-        self.char2_damage_3_var.set(self.char1_damage_3_var.get())
-        self.char2_critical_cd_var.set(self.char1_critical_cd_var.get())
-        self.char2_skill_cd_var.set(self.char1_skill_cd_var.get())
     
     def create_character_from_gui(self, char_prefix):
         """GUI 입력값으로부터 Character 객체 생성"""
@@ -524,31 +818,43 @@ class CharacterGUI:
             char.attacks_per_minute = int(float(getattr(self, f"{char_prefix}_attacks_var").get()))
             char.attack_power = float(getattr(self, f"{char_prefix}_attack_power_var").get())
             
-            # 확률 관련
-            char.p_critical = float(getattr(self, f"{char_prefix}_critical_var").get()) / 100
-            char.p_strong_hit = float(getattr(self, f"{char_prefix}_strong_hit_var").get()) / 100
-            char.p_double_shot = float(getattr(self, f"{char_prefix}_double_shot_var").get()) / 100
-            char.p_triple_shot = float(getattr(self, f"{char_prefix}_triple_shot_var").get()) / 100
+            # 확률 관련 (100% 초과 시 100%로 제한)
+            char.p_critical = min(float(getattr(self, f"{char_prefix}_critical_var").get()) / 100, 1.0)
+            char.p_strong_hit = min(float(getattr(self, f"{char_prefix}_strong_hit_var").get()) / 100, 1.0)
+            char.p_double_shot = min(float(getattr(self, f"{char_prefix}_double_shot_var").get()) / 100, 1.0)
+            char.p_triple_shot = min(float(getattr(self, f"{char_prefix}_triple_shot_var").get()) / 100, 1.0)
             
             # 배율 관련
             char.critical_multiplier = float(getattr(self, f"{char_prefix}_critical_mult_var").get()) / 100
             char.strong_hit_multiplier = float(getattr(self, f"{char_prefix}_strong_hit_mult_var").get()) / 100
             char.awakening_multiplier = 1.2 if char.is_awakening else 1
             
-            # 데미지 배율
-            char.damage_skill_1 = float(getattr(self, f"{char_prefix}_damage_1_var").get()) / 100
-            char.damage_skill_2 = float(getattr(self, f"{char_prefix}_damage_2_var").get()) / 100
-            char.damage_skill_3 = float(getattr(self, f"{char_prefix}_damage_3_var").get()) / 100
+            # 데미지 배율 (공통 설정 사용)
+            char.damage_skill_1 = float(self.damage_1_var.get()) / 100
+            char.damage_skill_2 = float(self.damage_2_var.get()) / 100
+            char.damage_skill_3 = float(self.damage_3_var.get()) / 100
             
-            # 쿨타임 설정
-            char.critical_cooldown = float(getattr(self, f"{char_prefix}_critical_cd_var").get())
-            char.skill_cooldown = float(getattr(self, f"{char_prefix}_skill_cd_var").get())
+            # 쿨타임 설정 (공통 설정 사용)
+            char.critical_cooldown = float(self.critical_cd_var.get())
+            char.skill_cooldown = float(self.skill_cd_var.get())
             
             # 쿨타임 감소 적용
             if char.is_cooldown:
                 char.critical_cooldown *= 0.8
                 char.skill_cooldown *= 0.8
-                
+            # 타수(공통설정) 적용
+            try:
+                char.hit_1 = int(self.hit_1_var.get())
+            except Exception:
+                char.hit_1 = 1
+            try:
+                char.hit_2 = int(self.hit_2_var.get())
+            except Exception:
+                char.hit_2 = 1
+            try:
+                char.hit_3 = int(self.hit_3_var.get())
+            except Exception:
+                char.hit_3 = 1
             return char
             
         except ValueError as e:
@@ -583,24 +889,8 @@ class CharacterGUI:
         # 별도 스레드에서 계산 실행 (GUI 블록 방지)
         def run_calculation():
             try:
-                # 결과를 캡처하기 위한 StringIO 사용
-                import io
-                import sys
-                
-                # 표준 출력을 캡처
-                old_stdout = sys.stdout
-                result_capture = io.StringIO()
-                sys.stdout = result_capture
-                
-                # 비교 실행
-                compare_characters(char1, char2, minutes, simulations)
-                
-                # 결과 가져오기
-                result = result_capture.getvalue()
-                sys.stdout = old_stdout
-                
-                # GUI 업데이트
-                self.root.after(0, lambda: self.result_text.insert(tk.END, result))
+                # GUI에서 직접 출력
+                self.root.after(0, lambda: compare_characters(char1, char2, minutes, simulations, self.result_text))
                 
             except Exception as e:
                 error_msg = f"계산 중 오류가 발생했습니다: {str(e)}"
