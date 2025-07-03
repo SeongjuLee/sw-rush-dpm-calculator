@@ -7,6 +7,14 @@ import locale
 import tkinter.font  # 추가: 폰트 관련 모듈 명시적 import
 import json
 import os
+import numpy as np
+
+# 상수 정의
+COOLDOWN_REDUCTION_MULTIPLIER = 0.8
+AWAKENING_MULTIPLIER = 1.2
+INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD = 0.01
+INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD = 1
+SETTINGS_FILE = "settings.json"
 
 # 한글 인코딩 설정
 if sys.platform.startswith('linux'):
@@ -58,7 +66,7 @@ class Character:
         # 배율 관련
         self.critical_multiplier = Character.DEFAULT_CRITICAL_MULTIPLIER
         self.strong_hit_multiplier = Character.DEFAULT_STRONG_HIT_MULTIPLIER
-        self.awakening_multiplier = 1.2 if self.is_awakening else 1
+        self.awakening_multiplier = AWAKENING_MULTIPLIER if self.is_awakening else 1
         
         # 데미지 배율
         self.damage_skill_1 = Character.DEFAULT_DAMAGE_SKILL_1
@@ -76,10 +84,10 @@ class Character:
         
         # 쿨타임 감소 적용
         if self.is_cooldown:
-            self.critical_cooldown *= 0.8
-            self.skill_cooldown *= 0.8
+            self.critical_cooldown *= COOLDOWN_REDUCTION_MULTIPLIER
+            self.skill_cooldown *= COOLDOWN_REDUCTION_MULTIPLIER
     
-    def simulate_damage(self, minutes=10, simulations=10000):
+    def simulate_damage(self, minutes=0.5, simulations=10000):
         """캐릭터의 데미지를 시뮬레이션하여 분당 데미지(DPM)를 계산"""
         return simulate_attacks_with_critical_and_skill(
             minutes=minutes,
@@ -147,54 +155,73 @@ def simulate_attacks_with_critical_and_skill(
     attacks_per_minute = int(attacks_per_minute)
     total_damage = 0
     total_attacks = 0
+    
+    # 소수점 시간을 처리하기 위해 초 단위로 변환
+    total_seconds = minutes * 60
+    attack_interval = 60 / attacks_per_minute
+    
     for _ in range(simulations):
         damage_this_simulation = 0
         time_since_last_critical = critical_cooldown
         time_since_last_skill = skill_cooldown
-        for minute in range(minutes):
-            for attack in range(attacks_per_minute):
-                attack_interval = 60 / attacks_per_minute
-                time_since_last_critical += attack_interval
-                time_since_last_skill += attack_interval
-                # 1. 스킬
-                if time_since_last_skill >= skill_cooldown:
-                    for _ in range(hit_3):
-                        damge_tick = damage_skill_3 * attack_power * awakening_multiplier
-                        if random.random() < p_strong_hit:
-                            damge_tick *= strong_hit_multiplier
-                        damage_this_simulation += damge_tick
-                        total_attacks += 1
-                    time_since_last_skill = 0
-                # 2. 치명타
-                elif time_since_last_critical >= critical_cooldown and random.random() < p_critical:
-                    for _ in range(hit_2):
-                        damge_tick = damage_skill_2 * critical_multiplier * attack_power * awakening_multiplier
-                        if random.random() < p_strong_hit:
-                            damge_tick *= strong_hit_multiplier
-                        damage_this_simulation += damge_tick
-                        total_attacks += 1
-                    time_since_last_critical = 0
-                # 3. 일반 공격
+        current_time = 0
+        
+        while current_time < total_seconds:
+            current_time += attack_interval
+            time_since_last_critical += attack_interval
+            time_since_last_skill += attack_interval
+            
+            # 1. 스킬
+            if time_since_last_skill >= skill_cooldown: # 스킬 쿨타임 체크
+                base_damage = damage_skill_3 * attack_power * awakening_multiplier
+                for _ in range(hit_3):
+                    damage_tick = base_damage
+                    if random.random() < p_critical:
+                        damage_tick *= critical_multiplier
+                    if random.random() < p_strong_hit:
+                        damage_tick *= strong_hit_multiplier
+                    damage_this_simulation += damage_tick
+                total_attacks += hit_3
+                time_since_last_skill = 0
+
+            # 2. 치명타
+            elif time_since_last_critical >= critical_cooldown and random.random() < p_critical: # 치명타 쿨타임 체크 & 치명타 확률 체크
+                base_damage = damage_skill_2 * attack_power * critical_multiplier * awakening_multiplier
+                for _ in range(hit_2):
+                    damage_tick = base_damage
+                    if random.random() < p_strong_hit:
+                        damage_tick *= strong_hit_multiplier
+                    damage_this_simulation += damage_tick
+                total_attacks += hit_2
+                time_since_last_critical = 0
+
+            # 3. 일반 공격
+            else:
+                base_damage = damage_skill_1 * attack_power * awakening_multiplier
+
+                # 더블샷/트리플샷 확률 계산
+                if random.random() < p_triple_shot:
+                    shot_count = 3
+                elif random.random() < p_double_shot:
+                    shot_count = 2
                 else:
                     shot_count = 1
-                    if random.random() < p_triple_shot:
-                        shot_count = 3
-                    elif random.random() < p_double_shot:
-                        shot_count = 2
-                    for _ in range(shot_count):
-                        for _ in range(hit_1):
-                            damge_tick = damage_skill_1 * attack_power * awakening_multiplier
-                            if random.random() < p_strong_hit:
-                                damge_tick *= strong_hit_multiplier
-                            damage_this_simulation += damge_tick
-                            total_attacks += 1
+
+                # 데미지 계산
+                for _ in range(shot_count):
+                    for _ in range(hit_1):
+                        damage_tick = base_damage
+                        if random.random() < p_strong_hit:
+                            damage_tick *= strong_hit_multiplier
+                        damage_this_simulation += damage_tick
+                total_attacks += shot_count * hit_1
         total_damage += damage_this_simulation
     
     # 분당 데미지(DPM)와 분당 공격 횟수(APM) 반환
     return total_damage / (simulations * minutes), total_attacks / (simulations * minutes)
 
 
-def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=None):
+def compare_characters(char1, char2, minutes=0.5, simulations=10000, text_widget=None):
     """두 캐릭터의 데미지를 비교"""
     if text_widget:
         text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
@@ -245,33 +272,16 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
         print(f"{char2.name} DPM: {damage2:,.2f} | APM: {apm2:.1f}")
         print()
     
-    # APM 차이 계산 및 출력을 위한 헬퍼 함수
-    def print_apm_comparison(apm1, apm2, char1, char2, text_widget):
-        apm_diff = apm1 - apm2
-        if text_widget:
-            if apm_diff > 0.1:  # 캐릭터1이 더 빠름
-                apm_text = f"{char1.name}이 {char2.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
-                apm_tag = "increase"
-            elif apm_diff < -0.1:  # 캐릭터2가 더 빠름
-                apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
-                apm_tag = "increase"
-            else:  # 차이가 미미함
-                apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})"
-                apm_tag = "insignificant"
-            text_widget.insert(tk.END, apm_text + "\n", apm_tag)
-        else:
-            print(f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})")
-
     if damage1 > damage2:
         diff = damage1 - damage2
         percentage = (diff / damage2) * 100
         if text_widget:
-            if percentage <= 0.05:
+            if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
                 text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 (의미 없음) ▼\n", "insignificant")
             else:
                 text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 ({percentage:.2f}% 약함) ▼\n", "decrease")
         else:
-            if percentage <= 0.05:
+            if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
                 print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 (의미 없음)")
             else:
                 print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 ({percentage:.2f}% 약함)")
@@ -279,12 +289,12 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
         diff = damage2 - damage1
         percentage = (diff / damage1) * 100
         if text_widget:
-            if percentage <= 0.05:
-                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음) ▲\n", "insignificant")
+            if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
+                text_widget.insert(tk.END, f"{char2.name}가 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음) ▲\n", "insignificant")
             else:
-                text_widget.insert(tk.END, f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함) ▲\n", "increase")
+                text_widget.insert(tk.END, f"{char2.name}가 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함) ▲\n", "increase")
         else:
-            if percentage <= 0.05:
+            if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
                 print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음)")
             else:
                 print(f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함)")
@@ -294,21 +304,22 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
         else:
             print("두 캐릭터의 데미지가 동일합니다.")
 
+    # APM 비교
     apm_diff = apm1 - apm2
     if text_widget:
-        if apm_diff > 0.1:  # 캐릭터1이 더 빠름
-            apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 느림 ▼"
+        if apm_diff > INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD:  # 캐릭터1이 더 빠름
+            apm_text = f"{char2.name}가 {char1.name}보다 {abs(apm_diff):.1f} APM 느림 ▼"
             apm_tag = "decrease"
-        elif apm_diff < -0.1:  # 캐릭터2가 더 빠름
-            apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
+        elif apm_diff < -INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD:  # 캐릭터2가 더 빠름
+            apm_text = f"{char2.name}가 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
             apm_tag = "increase"
         else:  # 차이가 미미함
-            apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})"
+            apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f}) (의미 없음)"
             apm_tag = "insignificant"
         text_widget.insert(tk.END, apm_text + "\n", apm_tag)
     else:
         print(f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})")
-    
+
     if text_widget:
         text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
     else:
@@ -318,7 +329,7 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
 def print_stat_with_comparison(text_widget, label, value, compare_char, compare_attr, format_str="{:.2f}", reverse=False, is_second_char=False, multiply_compare=1):
     """능력치를 비교하여 출력하는 헬퍼 함수"""
     stat_text = f"{label}: {format_str.format(value)}"
-    if compare_char and is_second_char:  # 캐릭터 (후)에만 증감 표시
+    if compare_char and is_second_char:  # 캐릭터(후)에만 증감 표시
         compare_value = getattr(compare_char, compare_attr) * multiply_compare
         if reverse:
             # 쿨타임처럼 낮을수록 좋은 경우
@@ -351,7 +362,7 @@ def print_stats_to_widget(char, text_widget, compare_char=None, is_second_char=F
     # 각성 여부 표시
     awakening_status = "각성 활성화" if char.is_awakening else "각성 비활성화"
     if compare_char and is_second_char:
-        # 캐릭터 (후)에서만 비교하여 증감 표시
+        # 캐릭터(후)에서만 비교하여 증감 표시
         if char.is_awakening > compare_char.is_awakening:
             awakening_tag = "increase"
             awakening_status += " ▲"
@@ -361,7 +372,7 @@ def print_stats_to_widget(char, text_widget, compare_char=None, is_second_char=F
         else:
             awakening_tag = "normal"
     else:
-        # 캐릭터 (전)에서는 항상 검은색으로 표시
+        # 캐릭터(전)에서는 항상 검은색으로 표시
         awakening_tag = "normal"
     text_widget.insert(tk.END, f"각성 상태: {awakening_status}\n", awakening_tag)
     
@@ -504,7 +515,7 @@ class CharacterGUI:
         }
         
         try:
-            with open("settings.json", "w", encoding="utf-8") as f:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
             print("설정이 저장되었습니다.")
         except Exception as e:
@@ -512,17 +523,17 @@ class CharacterGUI:
     
     def load_settings(self):
         """JSON 파일에서 설정을 불러옴"""
-        if not os.path.exists("settings.json"):
+        if not os.path.exists(SETTINGS_FILE):
             return False
         
         try:
-            with open("settings.json", "r", encoding="utf-8") as f:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 settings = json.load(f)
             
             # 캐릭터 1 설정 불러오기
             if "char1" in settings:
                 char1 = settings["char1"]
-                self.char1_name_var.set(char1.get("name", "캐릭터 (전)"))
+                self.char1_name_var.set(char1.get("name", "캐릭터(전)"))
                 self.char1_awakening_var.set(char1.get("awakening", True))
                 self.char1_cooldown_var.set(char1.get("cooldown", True))
                 self.char1_attacks_var.set(char1.get("attacks", "129"))
@@ -537,7 +548,7 @@ class CharacterGUI:
             # 캐릭터 2 설정 불러오기
             if "char2" in settings:
                 char2 = settings["char2"]
-                self.char2_name_var.set(char2.get("name", "캐릭터 (후)"))
+                self.char2_name_var.set(char2.get("name", "캐릭터(후)"))
                 self.char2_awakening_var.set(char2.get("awakening", True))
                 self.char2_cooldown_var.set(char2.get("cooldown", True))
                 self.char2_attacks_var.set(char2.get("attacks", "129"))
@@ -564,7 +575,7 @@ class CharacterGUI:
             # 시뮬레이션 설정 불러오기
             if "simulation" in settings:
                 sim = settings["simulation"]
-                self.minutes_var.set(sim.get("minutes", "10"))
+                self.minutes_var.set(sim.get("minutes", "0.5"))
                 self.simulations_var.set(sim.get("simulations", "10000"))
             
             print("설정을 불러왔습니다.")
@@ -580,6 +591,33 @@ class CharacterGUI:
             print("프로그램 시작 시 설정 파일을 자동으로 불러왔습니다.")
         # 설정 불러오기 후 초기값 저장 (JSON에서 불러온 값이 초기값이 되도록)
         self.save_initial_values()
+    
+    def validate_numeric_input(self, value, min_value=0, max_value=None, field_name="값"):
+        """숫자 입력 검증"""
+        try:
+            num_value = float(value)
+            if num_value < min_value:
+                messagebox.showwarning("입력 경고", f"{field_name}은 {min_value} 이상이어야 합니다.")
+                return False
+            if max_value is not None and num_value > max_value:
+                messagebox.showwarning("입력 경고", f"{field_name}은 {max_value} 이하여야 합니다.")
+                return False
+            return True
+        except ValueError:
+            messagebox.showerror("입력 오류", f"{field_name}에 숫자를 입력해주세요.")
+            return False
+    
+    def validate_integer_input(self, value, min_value=1, field_name="값"):
+        """정수 입력 검증"""
+        try:
+            int_value = int(float(value))
+            if int_value < min_value:
+                messagebox.showwarning("입력 경고", f"{field_name}은 {min_value} 이상이어야 합니다.")
+                return False
+            return True
+        except ValueError:
+            messagebox.showerror("입력 오류", f"{field_name}에 정수를 입력해주세요.")
+            return False
     
     def limit_probability(self, char_prefix, prob_type):
         """확률 값을 100% 이하로 제한하는 함수"""
@@ -658,7 +696,7 @@ class CharacterGUI:
         simulation_frame = ttk.LabelFrame(main_frame, text="시뮬레이션 설정", padding="2", style="Korean.TLabelframe")
         simulation_frame.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(2, 2), padx=(2, 2))
         ttk.Label(simulation_frame, text="시뮬레이션 시간 (분):", font=self.text_font).grid(row=0, column=0, sticky=tk.W, padx=(2, 6))
-        self.minutes_var = tk.StringVar(value="10")
+        self.minutes_var = tk.StringVar(value="0.5")
         ttk.Entry(simulation_frame, textvariable=self.minutes_var, width=entry_width, font=self.text_font, justify=entry_justify).grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1)
         ttk.Label(simulation_frame, text="시뮬레이션 횟수:", font=self.text_font).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2)
         self.simulations_var = tk.StringVar(value="10000")
@@ -703,9 +741,9 @@ class CharacterGUI:
         # 캐릭터 이름
         ttk.Label(parent, text="캐릭터 이름:", font=self.text_font).grid(row=0, column=0, sticky=tk.W, padx=(2, 24))
         if char_prefix == "char1":
-            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터 (전)"))
+            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터(전)"))
         else:
-            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터 (후)"))
+            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터(후)"))
         ttk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_name_var"), width=10, font=self.text_font, justify='right').grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         
         # 체크박스들
@@ -800,7 +838,7 @@ class CharacterGUI:
             'hit_3': self.hit_3_var.get(),
             'critical_cd': self.critical_cd_var.get(),
             'skill_cd': self.skill_cd_var.get(),
-            'minutes': self.minutes_var.get(),
+            'minutes': self.minutes_var.get() or "0.5",
             'simulations': self.simulations_var.get()
         }
 
@@ -842,33 +880,27 @@ class CharacterGUI:
         self.minutes_var.set(vals['minutes'])
         self.simulations_var.set(vals['simulations'])
 
+    def copy_character_stats(self, from_prefix, to_prefix):
+        """캐릭터 간 스탯 복사 (이름 제외)"""
+        # 복사할 속성 목록
+        attributes = [
+            'awakening', 'cooldown', 'attacks', 'attack_power',
+            'critical', 'strong_hit', 'double_shot', 'triple_shot',
+            'critical_mult', 'strong_hit_mult'
+        ]
+        
+        for attr in attributes:
+            from_var = getattr(self, f"{from_prefix}_{attr}_var")
+            to_var = getattr(self, f"{to_prefix}_{attr}_var")
+            to_var.set(from_var.get())
+    
     def set_char2_to_char1(self):
         """캐릭터 2의 정보를 캐릭터 1로 복사 (이름 제외)"""
-        # 이름은 복사하지 않음
-        self.char1_awakening_var.set(self.char2_awakening_var.get())
-        self.char1_cooldown_var.set(self.char2_cooldown_var.get())
-        self.char1_attacks_var.set(self.char2_attacks_var.get())
-        self.char1_attack_power_var.set(self.char2_attack_power_var.get())
-        self.char1_critical_var.set(self.char2_critical_var.get())
-        self.char1_strong_hit_var.set(self.char2_strong_hit_var.get())
-        self.char1_double_shot_var.set(self.char2_double_shot_var.get())
-        self.char1_triple_shot_var.set(self.char2_triple_shot_var.get())
-        self.char1_critical_mult_var.set(self.char2_critical_mult_var.get())
-        self.char1_strong_hit_mult_var.set(self.char2_strong_hit_mult_var.get())
+        self.copy_character_stats("char2", "char1")
         
     def set_char1_to_char2(self):
         """캐릭터 1의 정보를 캐릭터 2로 복사 (이름 제외)"""
-        # 이름은 복사하지 않음
-        self.char2_awakening_var.set(self.char1_awakening_var.get())
-        self.char2_cooldown_var.set(self.char1_cooldown_var.get())
-        self.char2_attacks_var.set(self.char1_attacks_var.get())
-        self.char2_attack_power_var.set(self.char1_attack_power_var.get())
-        self.char2_critical_var.set(self.char1_critical_var.get())
-        self.char2_strong_hit_var.set(self.char1_strong_hit_var.get())
-        self.char2_double_shot_var.set(self.char1_double_shot_var.get())
-        self.char2_triple_shot_var.set(self.char1_triple_shot_var.get())
-        self.char2_critical_mult_var.set(self.char1_critical_mult_var.get())
-        self.char2_strong_hit_mult_var.set(self.char1_strong_hit_mult_var.get())
+        self.copy_character_stats("char1", "char2")
     
     def create_character_from_gui(self, char_prefix):
         """GUI 입력값으로부터 Character 객체 생성"""
@@ -879,9 +911,16 @@ class CharacterGUI:
             char.is_awakening = getattr(self, f"{char_prefix}_awakening_var").get()
             char.is_cooldown = getattr(self, f"{char_prefix}_cooldown_var").get()
             
-            # 공격 관련
-            char.attacks_per_minute = int(float(getattr(self, f"{char_prefix}_attacks_var").get()))
-            char.attack_power = float(getattr(self, f"{char_prefix}_attack_power_var").get())
+            # 공격 관련 - 입력 검증
+            attacks_value = getattr(self, f"{char_prefix}_attacks_var").get()
+            if not self.validate_integer_input(attacks_value, 1, "공격 속도"):
+                return None
+            char.attacks_per_minute = int(float(attacks_value))
+            
+            attack_power_value = getattr(self, f"{char_prefix}_attack_power_var").get()
+            if not self.validate_numeric_input(attack_power_value, 0, field_name="공격력"):
+                return None
+            char.attack_power = float(attack_power_value)
             
             # 확률 관련 (100% 초과 시 100%로 제한)
             char.p_critical = min(float(getattr(self, f"{char_prefix}_critical_var").get()) / 100, 1.0)
@@ -889,10 +928,18 @@ class CharacterGUI:
             char.p_double_shot = min(float(getattr(self, f"{char_prefix}_double_shot_var").get()) / 100, 1.0)
             char.p_triple_shot = min(float(getattr(self, f"{char_prefix}_triple_shot_var").get()) / 100, 1.0)
             
-            # 배율 관련
-            char.critical_multiplier = float(getattr(self, f"{char_prefix}_critical_mult_var").get()) / 100
-            char.strong_hit_multiplier = float(getattr(self, f"{char_prefix}_strong_hit_mult_var").get()) / 100
-            char.awakening_multiplier = 1.2 if char.is_awakening else 1
+            # 배율 관련 - 입력 검증
+            critical_mult_value = getattr(self, f"{char_prefix}_critical_mult_var").get()
+            if not self.validate_numeric_input(critical_mult_value, 0, field_name="치명 피해"):
+                return None
+            char.critical_multiplier = float(critical_mult_value) / 100
+            
+            strong_hit_mult_value = getattr(self, f"{char_prefix}_strong_hit_mult_var").get()
+            if not self.validate_numeric_input(strong_hit_mult_value, 0, field_name="강타 피해"):
+                return None
+            char.strong_hit_multiplier = float(strong_hit_mult_value) / 100
+            
+            char.awakening_multiplier = AWAKENING_MULTIPLIER if char.is_awakening else 1
             
             # 데미지 배율 (공통 설정 사용)
             char.damage_skill_1 = float(self.damage_1_var.get()) / 100
@@ -905,40 +952,44 @@ class CharacterGUI:
             
             # 쿨타임 감소 적용
             if char.is_cooldown:
-                char.critical_cooldown *= 0.8
-                char.skill_cooldown *= 0.8
+                char.critical_cooldown *= COOLDOWN_REDUCTION_MULTIPLIER
+                char.skill_cooldown *= COOLDOWN_REDUCTION_MULTIPLIER
+            
             # 타수(공통설정) 적용
-            try:
-                char.hit_1 = int(self.hit_1_var.get())
-            except Exception:
-                char.hit_1 = 1
-            try:
-                char.hit_2 = int(self.hit_2_var.get())
-            except Exception:
-                char.hit_2 = 1
-            try:
-                char.hit_3 = int(self.hit_3_var.get())
-            except Exception:
-                char.hit_3 = 1
+            char.hit_1 = int(self.hit_1_var.get())
+            char.hit_2 = int(self.hit_2_var.get())
+            char.hit_3 = int(self.hit_3_var.get())
+            
             return char
             
-        except ValueError as e:
-            messagebox.showerror("입력 오류", f"숫자 입력에 오류가 있습니다: {str(e)}")
+        except (ValueError, AttributeError) as e:
+            messagebox.showerror("입력 오류", f"캐릭터 생성 중 오류가 발생했습니다: {str(e)}")
             return None
     
     def compare_damage(self):
         """데미지 비교 실행"""
-        try:
-            # 입력값 검증
-            minutes = int(self.minutes_var.get())
-            simulations = int(self.simulations_var.get())
-            
-            if minutes <= 0 or simulations <= 0:
-                messagebox.showerror("입력 오류", "시뮬레이션 시간과 횟수는 양수여야 합니다.")
-                return
-                
-        except ValueError:
-            messagebox.showerror("입력 오류", "시뮬레이션 설정에 숫자를 입력해주세요.")
+        # 입력값 검증
+        if not self.validate_numeric_input(self.minutes_var.get(), 0.1, field_name="시뮬레이션 시간"):
+            return
+        if not self.validate_integer_input(self.simulations_var.get(), 1, "시뮬레이션 횟수"):
+            return
+        
+        # 공통 설정 검증
+        if not self.validate_numeric_input(self.damage_1_var.get(), 0, field_name="일반 공격 배율"):
+            return
+        if not self.validate_numeric_input(self.damage_2_var.get(), 0, field_name="치명타 공격 배율"):
+            return
+        if not self.validate_numeric_input(self.damage_3_var.get(), 0, field_name="전용 스킬 배율"):
+            return
+        if not self.validate_integer_input(self.hit_1_var.get(), 1, "일반 공격 타수"):
+            return
+        if not self.validate_integer_input(self.hit_2_var.get(), 1, "치명타 공격 타수"):
+            return
+        if not self.validate_integer_input(self.hit_3_var.get(), 1, "전용 스킬 타수"):
+            return
+        if not self.validate_numeric_input(self.critical_cd_var.get(), 0, field_name="치명타 쿨타임"):
+            return
+        if not self.validate_numeric_input(self.skill_cd_var.get(), 0, field_name="스킬 쿨타임"):
             return
         
         # 캐릭터 생성
@@ -954,6 +1005,8 @@ class CharacterGUI:
         # 별도 스레드에서 계산 실행 (GUI 블록 방지)
         def run_calculation():
             try:
+                minutes = float(self.minutes_var.get())
+                simulations = int(self.simulations_var.get())
                 # GUI에서 직접 출력
                 self.root.after(0, lambda: compare_characters(char1, char2, minutes, simulations, self.result_text))
                 

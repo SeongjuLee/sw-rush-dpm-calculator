@@ -1,29 +1,29 @@
 {
   "char1": {
-    "name": "캐릭터 (전)",
+    "name": "캐릭터(전)",
     "awakening": true,
     "cooldown": true,
     "attacks": "129",
-    "attack_power": "12.42",
-    "critical": "88.08",
+    "attack_power": "12.19",
+    "critical": "92.79",
     "strong_hit": "51.91",
-    "double_shot": "22.44",
+    "double_shot": "22.48",
     "triple_shot": "21.11",
-    "critical_mult": "1190.41",
-    "strong_hit_mult": "179.03"
+    "critical_mult": "1190.40",
+    "strong_hit_mult": "179.23"
   },
   "char2": {
-    "name": "캐릭터 (후)",
+    "name": "캐릭터(후)",
     "awakening": true,
     "cooldown": true,
     "attacks": "129",
-    "attack_power": "12.42",
-    "critical": "88.08",
+    "attack_power": "12.19",
+    "critical": "92.79",
     "strong_hit": "51.91",
-    "double_shot": "22.44",
+    "double_shot": "22.48",
     "triple_shot": "21.11",
-    "critical_mult": "1190.41",
-    "strong_hit_mult": "179.03"
+    "critical_mult": "1190.40",
+    "strong_hit_mult": "179.23"
   },
   "common": {
     "damage_1": "430",
@@ -36,7 +36,7 @@
     "skill_cd": "10"
   },
   "simulation": {
-    "minutes": "10",
-    "simulations": "10000"
+    "minutes": "5",
+    "simulations": "20000"
   }
 }
