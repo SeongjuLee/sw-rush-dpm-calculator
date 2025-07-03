@@ -81,14 +81,26 @@ class Character:
     
     def simulate_damage(self, minutes=10, simulations=10000):
         """캐릭터의 데미지를 시뮬레이션하여 분당 데미지(DPM)를 계산"""
-        # hit_1, hit_2, hit_3이 Character에 없다면 1로 처리
         return simulate_attacks_with_critical_and_skill(
-            self.attacks_per_minute, minutes, self.p_critical, self.attack_power,
-            self.damage_skill_1, self.damage_skill_2, self.damage_skill_3,
-            self.critical_multiplier, self.p_strong_hit, self.strong_hit_multiplier, 
-            self.awakening_multiplier, self.p_double_shot, self.p_triple_shot,
-            self.critical_cooldown, self.skill_cooldown, simulations,
-            hit_1=self.hit_1, hit_2=self.hit_2, hit_3=self.hit_3
+            minutes=minutes,
+            simulations=simulations,
+            attack_power=self.attack_power,
+            attacks_per_minute=self.attacks_per_minute,
+            damage_skill_1=self.damage_skill_1,
+            damage_skill_2=self.damage_skill_2,
+            damage_skill_3=self.damage_skill_3,
+            p_critical=self.p_critical,
+            p_strong_hit=self.p_strong_hit,
+            p_double_shot=self.p_double_shot,
+            p_triple_shot=self.p_triple_shot,
+            critical_multiplier=self.critical_multiplier,
+            strong_hit_multiplier=self.strong_hit_multiplier,
+            awakening_multiplier=self.awakening_multiplier,
+            critical_cooldown=self.critical_cooldown,
+            skill_cooldown=self.skill_cooldown,
+            hit_1=self.hit_1,
+            hit_2=self.hit_2,
+            hit_3=self.hit_3
         )
     
     def print_stats(self):
@@ -111,14 +123,30 @@ class Character:
         print()
 
 
-def simulate_attacks_with_critical_and_skill(attacks_per_minute, minutes, p_critical, attack_power=1,
-                                           damage_skill_1=1, damage_skill_2=2, damage_skill_3=5, 
-                                           critical_multiplier=2, p_strong_hit=0.1, strong_hit_multiplier=2, awakening_multiplier=1,
-                                           p_double_shot=0.1, p_triple_shot=0.05,
-                                           critical_cooldown=2, skill_cooldown=10, simulations=10000,
-                                           hit_1=1, hit_2=1, hit_3=1):
+def simulate_attacks_with_critical_and_skill(
+    minutes=1, 
+    simulations=1000,
+    attack_power=1,
+    attacks_per_minute=120,
+    damage_skill_1=1, 
+    damage_skill_2=2, 
+    damage_skill_3=5, 
+    p_critical=0.5, 
+    p_strong_hit=0.1, 
+    p_double_shot=0.1, 
+    p_triple_shot=0.05,
+    critical_multiplier=2, 
+    strong_hit_multiplier=2, 
+    awakening_multiplier=1,
+    critical_cooldown=2, 
+    skill_cooldown=10, 
+    hit_1=1, 
+    hit_2=1, 
+    hit_3=1
+):
     attacks_per_minute = int(attacks_per_minute)
     total_damage = 0
+    total_attacks = 0
     for _ in range(simulations):
         damage_this_simulation = 0
         time_since_last_critical = critical_cooldown
@@ -135,6 +163,7 @@ def simulate_attacks_with_critical_and_skill(attacks_per_minute, minutes, p_crit
                         if random.random() < p_strong_hit:
                             damge_tick *= strong_hit_multiplier
                         damage_this_simulation += damge_tick
+                        total_attacks += 1
                     time_since_last_skill = 0
                 # 2. 치명타
                 elif time_since_last_critical >= critical_cooldown and random.random() < p_critical:
@@ -143,6 +172,7 @@ def simulate_attacks_with_critical_and_skill(attacks_per_minute, minutes, p_crit
                         if random.random() < p_strong_hit:
                             damge_tick *= strong_hit_multiplier
                         damage_this_simulation += damge_tick
+                        total_attacks += 1
                     time_since_last_critical = 0
                 # 3. 일반 공격
                 else:
@@ -157,8 +187,11 @@ def simulate_attacks_with_critical_and_skill(attacks_per_minute, minutes, p_crit
                             if random.random() < p_strong_hit:
                                 damge_tick *= strong_hit_multiplier
                             damage_this_simulation += damge_tick
+                            total_attacks += 1
         total_damage += damage_this_simulation
-    return total_damage / (simulations * minutes)
+    
+    # 분당 데미지(DPM)와 분당 공격 횟수(APM) 반환
+    return total_damage / (simulations * minutes), total_attacks / (simulations * minutes)
 
 
 def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=None):
@@ -193,25 +226,42 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
         char2.print_stats()
     
     # 데미지 계산
-    damage1 = char1.simulate_damage(minutes, simulations)
-    damage2 = char2.simulate_damage(minutes, simulations)
+    damage1, apm1 = char1.simulate_damage(minutes, simulations)
+    damage2, apm2 = char2.simulate_damage(minutes, simulations)
     
     # 결과 출력
     if text_widget:
         text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
         text_widget.insert(tk.END, "데미지 비교 결과\n", "normal")
         text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
-        text_widget.insert(tk.END, f"{char1.name} DPM: {damage1:,.2f}\n", "normal")
-        text_widget.insert(tk.END, f"{char2.name} DPM: {damage2:,.2f}\n", "normal")
+        text_widget.insert(tk.END, f"{char1.name} DPM: {damage1:,.2f} | APM: {apm1:.1f}\n", "normal")
+        text_widget.insert(tk.END, f"{char2.name} DPM: {damage2:,.2f} | APM: {apm2:.1f}\n", "normal")
         text_widget.insert(tk.END, "\n", "normal")
     else:
         print("=" * 60)
         print("데미지 비교 결과")
         print("=" * 60)
-        print(f"{char1.name} DPM: {damage1:,.2f}")
-        print(f"{char2.name} DPM: {damage2:,.2f}")
+        print(f"{char1.name} DPM: {damage1:,.2f} | APM: {apm1:.1f}")
+        print(f"{char2.name} DPM: {damage2:,.2f} | APM: {apm2:.1f}")
         print()
     
+    # APM 차이 계산 및 출력을 위한 헬퍼 함수
+    def print_apm_comparison(apm1, apm2, char1, char2, text_widget):
+        apm_diff = apm1 - apm2
+        if text_widget:
+            if apm_diff > 0.1:  # 캐릭터1이 더 빠름
+                apm_text = f"{char1.name}이 {char2.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
+                apm_tag = "increase"
+            elif apm_diff < -0.1:  # 캐릭터2가 더 빠름
+                apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
+                apm_tag = "increase"
+            else:  # 차이가 미미함
+                apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})"
+                apm_tag = "insignificant"
+            text_widget.insert(tk.END, apm_text + "\n", apm_tag)
+        else:
+            print(f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})")
+
     if damage1 > damage2:
         diff = damage1 - damage2
         percentage = (diff / damage2) * 100
@@ -243,6 +293,21 @@ def compare_characters(char1, char2, minutes=10, simulations=10000, text_widget=
             text_widget.insert(tk.END, "두 캐릭터의 데미지가 동일합니다.\n", "normal")
         else:
             print("두 캐릭터의 데미지가 동일합니다.")
+
+    apm_diff = apm1 - apm2
+    if text_widget:
+        if apm_diff > 0.1:  # 캐릭터1이 더 빠름
+            apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 느림 ▼"
+            apm_tag = "decrease"
+        elif apm_diff < -0.1:  # 캐릭터2가 더 빠름
+            apm_text = f"{char2.name}이 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
+            apm_tag = "increase"
+        else:  # 차이가 미미함
+            apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})"
+            apm_tag = "insignificant"
+        text_widget.insert(tk.END, apm_text + "\n", apm_tag)
+    else:
+        print(f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f})")
     
     if text_widget:
         text_widget.insert(tk.END, "=" * 60 + "\n", "normal")
