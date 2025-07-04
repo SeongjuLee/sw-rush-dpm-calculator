@@ -3,6 +3,7 @@
     "name": "캐릭터(전)",
     "awakening": true,
     "cooldown": true,
+    "amplification": false,
     "attacks": "129",
     "attack_power": "12.19",
     "critical": "92.79",
@@ -16,6 +17,7 @@
     "name": "캐릭터(후)",
     "awakening": true,
     "cooldown": true,
+    "amplification": false,
     "attacks": "129",
     "attack_power": "12.19",
     "critical": "92.79",
@@ -36,7 +38,7 @@
     "skill_cd": "10"
   },
   "simulation": {
-    "minutes": "5",
+    "minutes": "1",
     "simulations": "20000"
   }
 }
