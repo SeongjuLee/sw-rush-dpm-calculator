@@ -31,15 +31,15 @@ if sys.platform.startswith('linux'):
 class Character:
     DEFAULT_ATTACKS_PER_MINUTE = 129
     DEFAULT_ATTACK_POWER = 12.42
-    DEFAULT_P_CRITICAL = 88.08 / 100
-    DEFAULT_P_STRONG_HIT = 51.91 / 100
-    DEFAULT_P_DOUBLE_SHOT = 22.44 / 100
-    DEFAULT_P_TRIPLE_SHOT = 21.11 / 100
-    DEFAULT_CRITICAL_MULTIPLIER = 1190.41 / 100
-    DEFAULT_STRONG_HIT_MULTIPLIER = 159.03 / 100
+    DEFAULT_P_CRITICAL = 92.79 / 100
+    DEFAULT_P_STRONG_HIT = 52.15 / 100
+    DEFAULT_P_DOUBLE_SHOT = 22.48 / 100
+    DEFAULT_P_TRIPLE_SHOT = 21.23 / 100
+    DEFAULT_CRITICAL_MULTIPLIER = 1196.90 / 100
+    DEFAULT_STRONG_HIT_MULTIPLIER = 181.82 / 100
     DEFAULT_AWAKENING = True
     DEFAULT_COOLDOWN = True
-    DEFAULT_AMPLIFICATION = False
+    DEFAULT_AMPLIFICATION = True
     DEFAULT_DAMAGE_SKILL_1 = 430 / 100
     DEFAULT_DAMAGE_SKILL_2 = 190 / 100
     DEFAULT_DAMAGE_SKILL_3 = 280 / 100
@@ -131,10 +131,10 @@ def simulate_attacks_with_critical_and_skill(
     attack_interval = 60 / attacks_per_minute
     
     for _ in range(simulations):
+        current_time = 0
         damage_this_simulation = 0
         time_since_last_critical = critical_cooldown
         time_since_last_skill = skill_cooldown
-        current_time = 0
         
         while current_time < total_seconds:
             current_time += attack_interval
@@ -169,12 +169,12 @@ def simulate_attacks_with_critical_and_skill(
             else:
                 base_damage = damage_skill_1 * attack_power * awakening_multiplier
                 # 더블샷/트리플샷 확률 계산
+                shot_count = 1
+                if random.random() < p_double_shot:
+                    shot_count = 2
                 if random.random() < p_triple_shot:
                     shot_count = 3
-                elif random.random() < p_double_shot:
-                    shot_count = 2
-                else:
-                    shot_count = 1
+
                 # 데미지 계산
                 for _ in range(shot_count):
                     for _ in range(hit_1):
