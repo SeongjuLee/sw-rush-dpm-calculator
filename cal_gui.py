@@ -240,8 +240,8 @@ def simulate_attacks_with_critical_and_skill(
                     damage_tick = base_damage
                     if random.random() < p_critical:
                         damage_tick *= critical_multiplier
-                        if random.random() < p_strong_hit:
-                            damage_tick *= strong_hit_multiplier
+                    if random.random() < p_strong_hit:
+                        damage_tick *= strong_hit_multiplier
                     damage_this_simulation += damage_tick
                 total_attacks += hit_3
                 time_since_last_skill = 0
@@ -260,7 +260,6 @@ def simulate_attacks_with_critical_and_skill(
             # 3. 일반 공격
             else:
                 base_damage = damage_skill_1 * attack_power * awakening_multiplier
-
                 # 더블샷/트리플샷 확률 계산
                 if random.random() < p_triple_shot:
                     shot_count = 3
@@ -268,15 +267,14 @@ def simulate_attacks_with_critical_and_skill(
                     shot_count = 2
                 else:
                     shot_count = 1
-
                 # 데미지 계산
                 for _ in range(shot_count):
                     for _ in range(hit_1):
                         damage_tick = base_damage
-                        if random.random() < p_critical and shot_count > 1:
+                        if random.random() < p_critical and shot_count > 1: # 더블샷/트리플 샷 일 때 치명타 발생
                             damage_tick *= critical_multiplier
-                            if random.random() < p_strong_hit:
-                                damage_tick *= strong_hit_multiplier
+                        if random.random() < p_strong_hit: # 강타 발생
+                            damage_tick *= strong_hit_multiplier
                         damage_this_simulation += damage_tick
                 total_attacks += shot_count * hit_1
         total_damage += damage_this_simulation
@@ -291,7 +289,7 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         widget.destroy()
     
     # 메인 스크롤 프레임
-    main_canvas = tk.Canvas(parent, bg=PASTEL_BG, highlightthickness=0)
+    main_canvas = tk.Canvas(parent, bg=PASTEL_BG, highlightthickness=0, height=700)
     scrollbar = tk.Scrollbar(parent, orient="vertical", command=main_canvas.yview, bg=PASTEL_BG)
     scrollable_frame = tk.Frame(main_canvas, bg=PASTEL_BG)
     
@@ -359,7 +357,7 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
     else:
         char1_skill_stats.append(["전용 스킬", f"{char1.damage_skill_3:.2f}", "-", f"{char1.hit_3}", f"{char1.damage_skill_3 * char1.hit_3:.2f}"])
     
-    char1_skill_table = create_table_frame(char1_frame, ["스킬", "기본 배율", "증폭 보너스", "타수", "총합"], char1_skill_stats, "스킬 배율", height=3)
+    char1_skill_table = create_table_frame(char1_frame, ["스킬", "기본 배율", "증폭 보너스", "타수", "총합"], char1_skill_stats, "스킬 배율", height=3, is_amplification=char1.is_amplification)
     char1_skill_table.pack(fill='x', pady=(0, 10))
     
     # 캐릭터 1 쿨타임
@@ -381,10 +379,15 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
     char2_frame.pack(fill='x', padx=10, pady=5)
     
     # 캐릭터 2 기본 정보 (비교)
-    char2_info = [
-        ["각성 상태", "각성 활성화" if char2.is_awakening else "각성 비활성화"],
-        ["증폭 상태", "증폭 활성화" if char2.is_amplification else "증폭 비활성화"]
-    ]
+    char2_info = []
+    char2_info.append(["각성 상태", "각성 활성화" if char2.is_awakening else "각성 비활성화"])
+    
+    # 증폭 상태에 따른 색상 표시
+    if char2.is_amplification:
+        char2_info.append(["증폭 상태", "증폭 활성화 ▲"])
+    else:
+        char2_info.append(["증폭 상태", "증폭 비활성화 ▼"])
+    
     char2_info_table = create_table_frame(char2_frame, ["항목", "상태"], char2_info, "", height=2)
     char2_info_table.pack(fill='x', pady=(0, 10))
     
@@ -412,10 +415,12 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         compare_val = compare_values[i]
         current_val = float(value.replace('회/분', '').replace('M', '').replace('%', '').replace('x', ''))
         
-        if current_val > compare_val:
-            char2_basic_stats[i][1] = value + " ▲"
-        elif current_val < compare_val:
-            char2_basic_stats[i][1] = value + " ▼"
+        # 값이 실제로 다른 경우에만 증감 표시
+        if abs(current_val - compare_val) > 0.01:  # 0.01 이상 차이나는 경우만
+            if current_val > compare_val:
+                char2_basic_stats[i][1] = value + " ▲"
+            elif current_val < compare_val:
+                char2_basic_stats[i][1] = value + " ▼"
     
     char2_basic_table = create_table_frame(char2_frame, ["항목", "값"], char2_basic_stats, "기본 스탯", height=9)
     char2_basic_table.pack(fill='x', pady=(0, 10))
@@ -443,7 +448,7 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
     else:
         char2_skill_stats.append(["전용 스킬", f"{char2.damage_skill_3:.2f}", "-", f"{char2.hit_3}", f"{char2.damage_skill_3 * char2.hit_3:.2f}"])
     
-    char2_skill_table = create_table_frame(char2_frame, ["스킬", "기본 배율", "증폭 보너스", "타수", "총합"], char2_skill_stats, "스킬 배율", height=3)
+    char2_skill_table = create_table_frame(char2_frame, ["스킬", "기본 배율", "증폭 보너스", "타수", "총합"], char2_skill_stats, "스킬 배율", height=3, is_amplification=char2.is_amplification)
     char2_skill_table.pack(fill='x', pady=(0, 10))
     
     # 캐릭터 2 쿨타임 (비교)
@@ -452,15 +457,17 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         ["스킬 쿨타임", f"{char2.skill_cooldown:.1f}초"]
     ]
     
-    if char2.critical_cooldown < char1.critical_cooldown:
-        char2_cooldown_stats[0][1] += " ▲"
-    elif char2.critical_cooldown > char1.critical_cooldown:
-        char2_cooldown_stats[0][1] += " ▼"
+    if abs(char2.critical_cooldown - char1.critical_cooldown) > 0.01:
+        if char2.critical_cooldown < char1.critical_cooldown:
+            char2_cooldown_stats[0][1] += " ▲"
+        elif char2.critical_cooldown > char1.critical_cooldown:
+            char2_cooldown_stats[0][1] += " ▼"
         
-    if char2.skill_cooldown < char1.skill_cooldown:
-        char2_cooldown_stats[1][1] += " ▲"
-    elif char2.skill_cooldown > char1.skill_cooldown:
-        char2_cooldown_stats[1][1] += " ▼"
+    if abs(char2.skill_cooldown - char1.skill_cooldown) > 0.01:
+        if char2.skill_cooldown < char1.skill_cooldown:
+            char2_cooldown_stats[1][1] += " ▲"
+        elif char2.skill_cooldown > char1.skill_cooldown:
+            char2_cooldown_stats[1][1] += " ▼"
     
     char2_cooldown_table = create_table_frame(char2_frame, ["항목", "값"], char2_cooldown_stats, "쿨타임", height=2)
     char2_cooldown_table.pack(fill='x')
@@ -488,31 +495,39 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         percentage = (diff / damage2) * 100
         if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
             result_text = f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 (의미 없음) ▼"
+            result_color = "gray"
         else:
             result_text = f"{char2.name}이 {char1.name}보다 {diff:,.2f} DPM 낮음 ({percentage:.2f}% 약함) ▼"
+            result_color = "red"
     elif damage2 > damage1:
         diff = damage2 - damage1
         percentage = (diff / damage1) * 100
         if percentage <= INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD:
             result_text = f"{char2.name}가 {char1.name}보다 {diff:,.2f} DPM 높음 (의미 없음) ▲"
+            result_color = "gray"
         else:
             result_text = f"{char2.name}가 {char1.name}보다 {diff:,.2f} DPM 높음 ({percentage:.2f}% 강함) ▲"
+            result_color = "blue"
     else:
         result_text = "두 캐릭터의 데미지가 동일합니다."
+        result_color = "black"
     
-    result_label = tk.Label(result_frame, text=result_text, font=("Arial", 10, "bold"), bg=PASTEL_BG)
+    result_label = tk.Label(result_frame, text=result_text, font=("Arial", 10, "bold"), bg=PASTEL_BG, fg=result_color)
     result_label.pack(pady=5)
     
     # APM 비교
     apm_diff = apm1 - apm2
     if apm_diff > INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD:
         apm_text = f"{char2.name}가 {char1.name}보다 {abs(apm_diff):.1f} APM 느림 ▼"
+        apm_color = "red"
     elif apm_diff < -INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD:
         apm_text = f"{char2.name}가 {char1.name}보다 {abs(apm_diff):.1f} APM 빠름 ▲"
+        apm_color = "blue"
     else:
         apm_text = f"APM 차이: {apm_diff:+.1f} ({apm1:.1f} vs {apm2:.1f}) (의미 없음)"
+        apm_color = "gray"
     
-    apm_label = tk.Label(result_frame, text=apm_text, font=("Arial", 10), bg=PASTEL_BG)
+    apm_label = tk.Label(result_frame, text=apm_text, font=("Arial", 10), bg=PASTEL_BG, fg=apm_color)
     apm_label.pack(pady=5)
     
     # 스크롤바 배치
@@ -597,14 +612,11 @@ def compare_characters(char1, char2, minutes=0.5, simulations=10000, text_widget
     print("="*50)
 
 
-
-
-
 class CharacterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("캐릭터 추가스펙 계산기")
-        self.root.geometry("1x1200")
+        self.root.geometry("1x1000")
         self.root.update_idletasks()
         self.root.geometry("")
         self.root.resizable(True, True)
@@ -888,10 +900,10 @@ class CharacterGUI:
         common_frame.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(10, 2), padx=(2, 2))
         entry_width = 12
         entry_justify = 'right'
-        entry_padx_1 = (4, 8)
-        entry_padx_2 = (31, 2)
+        entry_padx_1 = (3, 6)
+        entry_padx_2 = (29, 2)
         label_padx_1 = (2, 3)
-        label_padx_2 = (14, 2)
+        label_padx_2 = (10, 2)
         # 1행
         tk.Label(common_frame, text="일반 공격 배율 (%):", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=0, sticky=tk.W, padx=label_padx_1)
         self.damage_1_var = tk.StringVar(value=str(round(Character.DEFAULT_DAMAGE_SKILL_1*100, 2)))
@@ -914,22 +926,22 @@ class CharacterGUI:
         self.hit_3_var = tk.StringVar(value="1")
         tk.Entry(common_frame, textvariable=self.hit_3_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=2, column=3, sticky=tk.W, padx=entry_padx_2)
         # 4행
-        tk.Label(common_frame, text="치명타 쿨타임 (초):", font=self.text_font, bg=PASTEL_BG).grid(row=3, column=0, sticky=tk.W, padx=label_padx_1)
+        tk.Label(common_frame, text="치명타 쿨타임 (초):", font=self.text_font, bg=PASTEL_BG).grid(row=3, column=0, sticky=tk.W, padx=label_padx_1, pady=(0, 1))
         self.critical_cd_var = tk.StringVar(value=str(Character.DEFAULT_CRITICAL_COOLDOWN))
-        tk.Entry(common_frame, textvariable=self.critical_cd_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=3, column=1, sticky=tk.W, padx=entry_padx_1)
-        tk.Label(common_frame, text="스킬 쿨타임 (초):", font=self.text_font, bg=PASTEL_BG).grid(row=3, column=2, sticky=tk.W, padx=label_padx_2)
+        tk.Entry(common_frame, textvariable=self.critical_cd_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=3, column=1, sticky=tk.W, padx=entry_padx_1, pady=(0, 1))
+        tk.Label(common_frame, text="스킬 쿨타임 (초):", font=self.text_font, bg=PASTEL_BG).grid(row=3, column=2, sticky=tk.W, padx=label_padx_2, pady=(0, 1))
         self.skill_cd_var = tk.StringVar(value=str(Character.DEFAULT_SKILL_COOLDOWN))
-        tk.Entry(common_frame, textvariable=self.skill_cd_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=3, column=3, sticky=tk.W, padx=entry_padx_2)
+        tk.Entry(common_frame, textvariable=self.skill_cd_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=3, column=3, sticky=tk.W, padx=entry_padx_2, pady=(0, 1))
 
         # 시뮬레이션 설정 프레임 (tk.LabelFrame)
         simulation_frame = tk.LabelFrame(main_frame, text="시뮬레이션 설정", bg=PASTEL_BG, fg="black", font=self.text_font)
         simulation_frame.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 2), padx=(2, 2))
-        tk.Label(simulation_frame, text="시뮬레이션 시간 (분):", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=0, sticky=tk.W, padx=(2, 6))
+        tk.Label(simulation_frame, text="시뮬레이션 시간 (분):", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=0, sticky=tk.W, padx=(2, 6), pady=(0, 1))
         self.minutes_var = tk.StringVar(value="0.5")
-        tk.Entry(simulation_frame, textvariable=self.minutes_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1)
-        tk.Label(simulation_frame, text="시뮬레이션 횟수:", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2)
+        tk.Entry(simulation_frame, textvariable=self.minutes_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1, pady=(0, 1))
+        tk.Label(simulation_frame, text="시뮬레이션 횟수:", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2, pady=(0, 1))
         self.simulations_var = tk.StringVar(value="10000")
-        tk.Entry(simulation_frame, textvariable=self.simulations_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=3, sticky=tk.W, padx=(35, 2))
+        tk.Entry(simulation_frame, textvariable=self.simulations_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=3, sticky=tk.W, padx=(32, 2), pady=(0, 1))
 
         # 버튼 프레임 (tk.Frame)
         button_frame = tk.Frame(main_frame, bg=PASTEL_BG)
@@ -1016,9 +1028,9 @@ class CharacterGUI:
         setattr(self, f"{char_prefix}_critical_mult_var", tk.StringVar(value=str(round(Character.DEFAULT_CRITICAL_MULTIPLIER*100, 2))))
         tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_critical_mult_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove").grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         row += 1
-        tk.Label(parent, text="강타 피해 (%):", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
+        tk.Label(parent, text="강타 피해 (%):", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24), pady=(0, 1))
         setattr(self, f"{char_prefix}_strong_hit_mult_var", tk.StringVar(value=str(round(Character.DEFAULT_STRONG_HIT_MULTIPLIER*100, 2))))
-        tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_mult_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove").grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
+        tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_strong_hit_mult_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove").grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2), pady=(0, 1))
 
     def save_initial_values(self):
         self.initial_values = {
@@ -1251,28 +1263,58 @@ class CharacterGUI:
         thread.start()
 
 
-def create_table_frame(parent, headers, data, table_name="", height=6):
+def create_table_frame(parent, headers, data, table_name="", height=6, is_amplification=False):
     """Treeview를 사용한 표 프레임 생성 (연베이지톤 스타일 적용)"""
     try:
         frame = ttk.Frame(parent, style="Custom.TFrame")
         if table_name:
             title_label = ttk.Label(frame, text=table_name, font=("Arial", 10, "bold"), style="Custom.TLabel")
             title_label.pack(pady=(5, 2))
+        
+        # 고정된 총 너비 설정
+        total_width = 434  # 총 테이블 너비 (픽셀)
+        column_count = len(headers)
+        base_width = total_width // column_count  # 기본 컬럼 너비
+        
         tree = ttk.Treeview(frame, columns=headers, show='headings', height=height, style="Custom.Treeview")
-        for header in headers:
+        
+        for i, header in enumerate(headers):
             tree.heading(header, text=header)
-            max_width = max(80, min(140, len(str(header)) * 9))
-            for row in data:
-                if len(row) > headers.index(header):
-                    cell_width = len(str(row[headers.index(header)])) * 9
-                    max_width = max(max_width, min(140, cell_width))
-            tree.column(header, width=max_width, anchor='center')
+            # 스킬 배율 표에서 증폭이 활성화된 경우 두 번째 열("기본 배율") 너비 조정
+            if table_name == "스킬 배율" and is_amplification and i == 1:  # 두 번째 열 (index 1)
+                column_width = int(base_width * 1.4)  # 40% 더 넓게
+            elif table_name == "스킬 배율" and is_amplification and i != 1:  # 나머지 컬럼은 좁게
+                column_width = int(base_width * 0.85)  # 15% 더 좁게
+            else:
+                column_width = int(base_width * 1)  # 기본 너비
+            tree.column(header, width=column_width, anchor='center')
+        
         for row in data:
-            tree.insert('', 'end', values=row)
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=scrollbar.set)
+            item = tree.insert('', 'end', values=row)
+            
+            # 색상 태그 설정
+            tree.tag_configure('white_bg', background='white')
+            tree.tag_configure('red_text', foreground='red')
+            tree.tag_configure('blue_text', foreground='blue')
+            tree.tag_configure('gray_text', foreground='gray')
+            
+            # 비교 표시가 있는 경우 색상 적용
+            tags = ['white_bg']
+            for value in row:
+                if isinstance(value, str):
+                    if '▲' in value:
+                        tags.append('blue_text')
+                        break
+                    elif '▼' in value:
+                        tags.append('red_text')
+                        break
+                    elif '(의미 없음)' in value:
+                        tags.append('gray_text')
+                        break
+            
+            tree.item(item, tags=tuple(tags))
+        
         tree.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
         return frame
     except Exception as e:
         print(f"Treeview 생성 중 오류: {e}")
