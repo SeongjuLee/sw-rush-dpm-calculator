@@ -10,7 +10,7 @@ import os
 
 # 상수
 COOLDOWN_REDUCTION_MULTIPLIER = 0.8
-AWAKENING_MULTIPLIER = 1.2
+SEVENTH_AWAKENING_MULTIPLIER = 1.2
 INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD = 0.2
 INSIGNIFICANT_APM_DIFFERENCE_THRESHOLD = 1
 SETTINGS_FILE = "settings.json"
@@ -28,17 +28,18 @@ if sys.platform.startswith('linux'):
 
 
 class Character:
-    DEFAULT_ATTACK_SPEED = 129
+    DEFAULT_ATTACK_SPEED = 130
     DEFAULT_ATTACK_POWER = 12.32
     DEFAULT_P_CRITICAL = 90.35 / 100
     DEFAULT_P_STRONG_HIT = 58.12 / 100
     DEFAULT_P_DOUBLE_SHOT = 26.08 / 100
-    DEFAULT_P_TRIPLE_SHOT = 21.23 / 100
+    DEFAULT_P_TRIPLE_SHOT = 11.23 / 100
     DEFAULT_CRITICAL_MULTIPLIER = 1171.71 / 100
     DEFAULT_STRONG_HIT_MULTIPLIER = 185.45 / 100
-    DEFAULT_AWAKENING = True
+    DEFAULT_SEVENTH_AWAKENING = True
     DEFAULT_COOLDOWN = True
     DEFAULT_AMPLIFICATION = True
+    DEFAULT_THIRD_AWAKENING = False
     DEFAULT_DAMAGE_SKILL_1 = 430 / 100
     DEFAULT_DAMAGE_SKILL_2 = 190 / 100
     DEFAULT_DAMAGE_SKILL_3 = 280 / 100
@@ -51,9 +52,10 @@ class Character:
 
     def __init__(self, name="Character"):
         self.name = name
-        self.is_awakening = Character.DEFAULT_AWAKENING
+        self.is_seventh_awakening = Character.DEFAULT_SEVENTH_AWAKENING
         self.is_cooldown = Character.DEFAULT_COOLDOWN
         self.is_amplification = Character.DEFAULT_AMPLIFICATION
+        self.is_third_awakening = Character.DEFAULT_THIRD_AWAKENING
         self.attack_speed = Character.DEFAULT_ATTACK_SPEED
         self.attack_power = Character.DEFAULT_ATTACK_POWER
         self.p_critical = Character.DEFAULT_P_CRITICAL
@@ -62,7 +64,7 @@ class Character:
         self.p_triple_shot = Character.DEFAULT_P_TRIPLE_SHOT
         self.critical_multiplier = Character.DEFAULT_CRITICAL_MULTIPLIER
         self.strong_hit_multiplier = Character.DEFAULT_STRONG_HIT_MULTIPLIER
-        self.awakening_multiplier = AWAKENING_MULTIPLIER if self.is_awakening else 1
+        self.seventh_awakening_multiplier = SEVENTH_AWAKENING_MULTIPLIER if self.is_seventh_awakening else 1
         self.damage_skill_1 = Character.DEFAULT_DAMAGE_SKILL_1
         self.damage_skill_2 = Character.DEFAULT_DAMAGE_SKILL_2
         self.damage_skill_3 = Character.DEFAULT_DAMAGE_SKILL_3
@@ -91,13 +93,14 @@ class Character:
             p_triple_shot=self.p_triple_shot,
             critical_multiplier=self.critical_multiplier,
             strong_hit_multiplier=self.strong_hit_multiplier,
-            awakening_multiplier=self.awakening_multiplier,
+            seventh_awakening_multiplier=self.seventh_awakening_multiplier,
             critical_cooldown=self.critical_cooldown,
             skill_cooldown=self.skill_cooldown,
             hit_1=self.hit_1,
             hit_2=self.hit_2,
             hit_3=self.hit_3,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            third_awakening=self.is_third_awakening
         )
 
 
@@ -115,13 +118,14 @@ def simulate_attacks_with_critical_and_skill(
     p_triple_shot=0.05,
     critical_multiplier=2, 
     strong_hit_multiplier=2, 
-    awakening_multiplier=1,
+    seventh_awakening_multiplier=1,
     critical_cooldown=2, 
     skill_cooldown=10, 
     hit_1=1, 
     hit_2=1, 
     hit_3=1,
-    progress_callback=None
+    progress_callback=None,
+    third_awakening=False
 ):
     attack_speed = int(attack_speed)
     total_damage = 0
@@ -136,8 +140,8 @@ def simulate_attacks_with_critical_and_skill(
     for _ in range(simulations):
         current_time = 0
         damage_this_simulation = 0
-        time_since_last_critical = critical_cooldown
-        time_since_last_skill = skill_cooldown
+        time_since_last_critical = critical_cooldown if third_awakening else 0  
+        time_since_last_skill = skill_cooldown if third_awakening else 0
         
         # 진행률 업데이트 (1000번마다)
         if progress_callback and (_ + 1) % 1000 == 0:
@@ -145,13 +149,10 @@ def simulate_attacks_with_critical_and_skill(
             progress_callback(progress)
         
         while current_time < total_seconds:
-            current_time += attack_interval
-            time_since_last_critical += attack_interval
-            time_since_last_skill += attack_interval
             
-            # 1. 스킬
+            # 1. 스킬 (3각이 활성화되면 쿨타임 무시하고 바로 발동)
             if time_since_last_skill >= skill_cooldown:  # 스킬 쿨타임 체크
-                base_damage = damage_skill_3 * attack_power * awakening_multiplier
+                base_damage = damage_skill_3 * attack_power * seventh_awakening_multiplier
                 for _ in range(hit_3):
                     damage_tick = base_damage
                     if random.random() < p_critical:
@@ -164,7 +165,7 @@ def simulate_attacks_with_critical_and_skill(
 
             # 2. 치명타
             elif time_since_last_critical >= critical_cooldown and random.random() < p_critical:  # 치명타 쿨타임 체크 & 치명타 확률 체크
-                base_damage = damage_skill_2 * attack_power * critical_multiplier * awakening_multiplier
+                base_damage = damage_skill_2 * attack_power * critical_multiplier * seventh_awakening_multiplier
                 for _ in range(hit_2):
                     damage_tick = base_damage
                     if random.random() < p_strong_hit:
@@ -175,7 +176,7 @@ def simulate_attacks_with_critical_and_skill(
 
             # 3. 일반 공격
             else:
-                base_damage = damage_skill_1 * attack_power * awakening_multiplier
+                base_damage = damage_skill_1 * attack_power * seventh_awakening_multiplier
                 # 더블샷/트리플샷 확률 계산
                 shot_count = 1
                 if random.random() < p_double_shot:
@@ -193,6 +194,12 @@ def simulate_attacks_with_critical_and_skill(
                             damage_tick *= strong_hit_multiplier
                         damage_this_simulation += damage_tick
                 total_attacks += shot_count * hit_1
+
+            # 시간 증가
+            current_time += attack_interval
+            time_since_last_critical += attack_interval
+            time_since_last_skill += attack_interval
+
         total_damage += damage_this_simulation
     
     # 분당 데미지(DPM)와 분당 공격 횟수(APM) 반환
@@ -251,10 +258,11 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
     
     # 캐릭터 1 기본 정보
     char1_info = [
-        ["각성 상태", "각성 활성화" if char1.is_awakening else "각성 비활성화"],
-        ["증폭 상태", "증폭 활성화" if char1.is_amplification else "증폭 비활성화"]
+        ["3각 상태", "활성화" if char1.is_third_awakening else "비활성화"],
+        ["7각 상태", "활성화" if char1.is_seventh_awakening else "비활성화"],
+        ["증폭 상태", "활성화" if char1.is_amplification else "비활성화"]
     ]
-    char1_info_table = create_table_frame(char1_frame, ["항목", "상태"], char1_info, "", height=2, main_canvas=main_canvas)
+    char1_info_table = create_table_frame(char1_frame, ["항목", "상태"], char1_info, "", height=3, main_canvas=main_canvas)
     char1_info_table.pack(fill='x', pady=(0, 10))
     
     # 캐릭터 1 기본 스탯
@@ -267,7 +275,7 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         ["트리플샷 확률", f"{char1.p_triple_shot * 100:.2f}%"],
         ["치명 피해", f"{char1.critical_multiplier * 100:.2f}%"],
         ["강타 피해", f"{char1.strong_hit_multiplier * 100:.2f}%"],
-        ["각성 배율", f"{char1.awakening_multiplier:.2f}"]
+        ["각성 배율", f"{char1.seventh_awakening_multiplier:.2f}"]
     ]
     char1_basic_table = create_table_frame(char1_frame, ["항목", "값"], char1_basic_stats, "기본 스탯", height=9, main_canvas=main_canvas)
     char1_basic_table.pack(fill='x', pady=(0, 10))
@@ -325,21 +333,44 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
     
     # 캐릭터 2 기본 정보 (비교)
     char2_info = []
-    char2_info.append(["각성 상태", "각성 활성화" if char2.is_awakening else "각성 비활성화"])
+    
+    # 3각 상태 비교
+    if char2.is_third_awakening:
+        if char1.is_third_awakening:
+            char2_info.append(["3각 상태", "활성화"])
+        else:
+            char2_info.append(["3각 상태", "활성화 ▲"])
+    else:
+        if char1.is_third_awakening:
+            char2_info.append(["3각 상태", "비활성화 ▼"])
+        else:
+            char2_info.append(["3각 상태", "비활성화"])
+    
+    # 7각 상태 비교
+    if char2.is_seventh_awakening:
+        if char1.is_seventh_awakening:
+            char2_info.append(["7각 상태", "활성화"])
+        else:
+            char2_info.append(["7각 상태", "활성화 ▲"])
+    else:
+        if char1.is_seventh_awakening:
+            char2_info.append(["7각 상태", "비활성화 ▼"])
+        else:
+            char2_info.append(["7각 상태", "비활성화"])
     
     # 증폭 상태에 따른 색상 표시
     if char2.is_amplification:
         if char1.is_amplification:
-            char2_info.append(["증폭 상태", "증폭 활성화"])
+            char2_info.append(["증폭 상태", "활성화"])
         else:
-            char2_info.append(["증폭 상태", "증폭 활성화 ▲"])
+            char2_info.append(["증폭 상태", "활성화 ▲"])
     else:
         if char1.is_amplification:
-            char2_info.append(["증폭 상태", "증폭 비활성화 ▼"])
+            char2_info.append(["증폭 상태", "비활성화 ▼"])
         else:
-            char2_info.append(["증폭 상태", "증폭 비활성화"])
+            char2_info.append(["증폭 상태", "비활성화"])
     
-    char2_info_table = create_table_frame(char2_frame, ["항목", "상태"], char2_info, "", height=2, main_canvas=main_canvas)
+    char2_info_table = create_table_frame(char2_frame, ["항목", "상태"], char2_info, "", height=3, main_canvas=main_canvas)
     char2_info_table.pack(fill='x', pady=(0, 10))
     
     # 캐릭터 2 기본 스탯 (비교)
@@ -352,14 +383,14 @@ def create_clean_output_display(parent, char1, char2, damage1, apm1, damage2, ap
         ["트리플샷 확률", f"{char2.p_triple_shot * 100:.2f}%"],
         ["치명 피해", f"{char2.critical_multiplier * 100:.2f}%"],
         ["강타 피해", f"{char2.strong_hit_multiplier * 100:.2f}%"],
-        ["각성 배율", f"{char2.awakening_multiplier:.2f}"]
+        ["각성 배율", f"{char2.seventh_awakening_multiplier:.2f}"]
     ]
     
     # 비교 표시 추가
     compare_values = [
         char1.attack_speed, char1.attack_power, char1.p_critical * 100,
         char1.p_strong_hit * 100, char1.p_double_shot * 100, char1.p_triple_shot * 100,
-        char1.critical_multiplier * 100, char1.strong_hit_multiplier * 100, char1.awakening_multiplier
+        char1.critical_multiplier * 100, char1.strong_hit_multiplier * 100, char1.seventh_awakening_multiplier
     ]
     
     for i, (label, value) in enumerate(char2_basic_stats):
@@ -675,9 +706,10 @@ class CharacterGUI:
         settings = {
             "char1": {
                 "name": self.char1_name_var.get(),
-                "awakening": self.char1_awakening_var.get(),
+                "seventh_awakening": self.char1_seventh_awakening_var.get(),
                 "cooldown": self.char1_cooldown_var.get(),
                 "amplification": self.char1_amplification_var.get(),
+                "third_awakening": self.char1_third_awakening_var.get(),
                 "attack_speed": self.char1_attack_speed_var.get(),
                 "attack_power": self.char1_attack_power_var.get(),
                 "critical": self.char1_critical_var.get(),
@@ -689,9 +721,10 @@ class CharacterGUI:
             },
             "char2": {
                 "name": self.char2_name_var.get(),
-                "awakening": self.char2_awakening_var.get(),
+                "seventh_awakening": self.char2_seventh_awakening_var.get(),
                 "cooldown": self.char2_cooldown_var.get(),
                 "amplification": self.char2_amplification_var.get(),
+                "third_awakening": self.char2_third_awakening_var.get(),
                 "attack_speed": self.char2_attack_speed_var.get(),
                 "attack_power": self.char2_attack_power_var.get(),
                 "critical": self.char2_critical_var.get(),
@@ -736,10 +769,11 @@ class CharacterGUI:
             # 캐릭터 1 설정 불러오기
             if "char1" in settings:
                 char1 = settings["char1"]
-                self.char1_name_var.set(char1.get("name", "캐릭터(전)"))
-                self.char1_awakening_var.set(char1.get("awakening", True))
+                self.char1_name_var.set(char1.get("name", "사브리나(전)"))
+                self.char1_seventh_awakening_var.set(char1.get("seventh_awakening", True))
                 self.char1_cooldown_var.set(char1.get("cooldown", True))
                 self.char1_amplification_var.set(char1.get("amplification", False))
+                self.char1_third_awakening_var.set(char1.get("third_awakening", False))
                 self.char1_attack_speed_var.set(char1.get("attack_speed", "129"))
                 self.char1_attack_power_var.set(char1.get("attack_power", "12.42"))
                 self.char1_critical_var.set(char1.get("critical", "88.08"))
@@ -752,10 +786,11 @@ class CharacterGUI:
             # 캐릭터 2 설정 불러오기
             if "char2" in settings:
                 char2 = settings["char2"]
-                self.char2_name_var.set(char2.get("name", "캐릭터(후)"))
-                self.char2_awakening_var.set(char2.get("awakening", True))
+                self.char2_name_var.set(char2.get("name", "사브리나(후)"))
+                self.char2_seventh_awakening_var.set(char2.get("seventh_awakening", True))
                 self.char2_cooldown_var.set(char2.get("cooldown", True))
                 self.char2_amplification_var.set(char2.get("amplification", False))
+                self.char2_third_awakening_var.set(char2.get("third_awakening", False))
                 self.char2_attack_speed_var.set(char2.get("attack_speed", "129"))
                 self.char2_attack_power_var.set(char2.get("attack_power", "12.42"))
                 self.char2_critical_var.set(char2.get("critical", "88.08"))
@@ -905,7 +940,7 @@ class CharacterGUI:
         self.minutes_var = tk.StringVar(value="1")
         tk.Entry(simulation_frame, textvariable=self.minutes_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=1, sticky=tk.W, padx=entry_padx_1, pady=(0, 1))
         tk.Label(simulation_frame, text="시뮬레이션 횟수:", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=2, sticky=tk.W, padx=label_padx_2, pady=(0, 1))
-        self.simulations_var = tk.StringVar(value="20000")
+        self.simulations_var = tk.StringVar(value="10000")
         tk.Entry(simulation_frame, textvariable=self.simulations_var, width=entry_width, font=self.text_font, justify=entry_justify, bg="white", relief="groove").grid(row=0, column=3, sticky=tk.W, padx=(32, 2), pady=(0, 1))
 
         # 버튼 프레임 (tk.Frame)
@@ -929,6 +964,10 @@ class CharacterGUI:
         self.initial_message = tk.Label(self.result_frame, text="데미지 비교 버튼을 클릭하여 결과를 확인하세요.", bg=PASTEL_BG, font=self.text_font)
         self.initial_message.pack(expand=True, fill='both', pady=20)
 
+        # 저작권 정보 (맨 밑 오른쪽)
+        copyright_label = tk.Label(main_frame, text="Made by 교수 (Ch. KO17)", font=("Arial", 8), bg=PASTEL_BG, fg="#888888")
+        copyright_label.grid(row=6, column=0, columnspan=4, sticky='se', padx=(0, 5), pady=(2, 2))
+
         # 캐릭터 1/2 위젯 생성
         self.create_character_widgets(char1_frame, "char1")
         self.create_character_widgets(char2_frame, "char2")
@@ -939,21 +978,27 @@ class CharacterGUI:
         # 캐릭터 이름
         tk.Label(parent, text="캐릭터 이름:", font=self.text_font, bg=PASTEL_BG).grid(row=0, column=0, sticky=tk.W, padx=(2, 24))
         if char_prefix == "char1":
-            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터(전)"))
+            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="사브리나(전)"))
         else:
-            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="캐릭터(후)"))
+            setattr(self, f"{char_prefix}_name_var", tk.StringVar(value="사브리나(후)"))
         tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_name_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove").grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
-        # 체크박스 영역을 별도 Frame으로 분리 (1행 3열 가로 배치, 가운데 정렬)
+        # 체크박스 영역을 별도 Frame으로 분리 (1행 4열 가로 배치, 촘촘한 간격)
         check_frame = tk.Frame(parent, bg=PASTEL_BG)
         check_frame.grid(row=1, column=0, columnspan=2, sticky='ew')
-        for i in range(3):
+        for i in range(4):
             check_frame.grid_columnconfigure(i, weight=1)
-        setattr(self, f"{char_prefix}_awakening_var", tk.BooleanVar(value=Character.DEFAULT_AWAKENING))
-        tk.Checkbutton(check_frame, text="각성", variable=getattr(self, f"{char_prefix}_awakening_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=0, sticky='ew', padx=(8, 8))
-        setattr(self, f"{char_prefix}_amplification_var", tk.BooleanVar(value=Character.DEFAULT_AMPLIFICATION))
-        tk.Checkbutton(check_frame, text="증폭", variable=getattr(self, f"{char_prefix}_amplification_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=1, sticky='ew', padx=(8, 8))
-        setattr(self, f"{char_prefix}_cooldown_var", tk.BooleanVar(value=Character.DEFAULT_COOLDOWN))
-        tk.Checkbutton(check_frame, text="쿨감", variable=getattr(self, f"{char_prefix}_cooldown_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=2, sticky='ew', padx=(8, 8))
+        # 3각
+        setattr(self, f"{char_prefix}_third_awakening_var", tk.BooleanVar(value=False if char_prefix == "char1" else True))
+        tk.Checkbutton(check_frame, text="3각", variable=getattr(self, f"{char_prefix}_third_awakening_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=0, sticky='ew', padx=(4, 2))
+        # 7각
+        setattr(self, f"{char_prefix}_seventh_awakening_var", tk.BooleanVar(value=False if char_prefix == "char1" else True))
+        tk.Checkbutton(check_frame, text="7각", variable=getattr(self, f"{char_prefix}_seventh_awakening_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=1, sticky='ew', padx=(2, 2))
+        # 증폭
+        setattr(self, f"{char_prefix}_amplification_var", tk.BooleanVar(value=False if char_prefix == "char1" else True))
+        tk.Checkbutton(check_frame, text="증폭", variable=getattr(self, f"{char_prefix}_amplification_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=2, sticky='ew', padx=(2, 2))
+        # 쿨감
+        setattr(self, f"{char_prefix}_cooldown_var", tk.BooleanVar(value=False if char_prefix == "char1" else True))
+        tk.Checkbutton(check_frame, text="쿨감", variable=getattr(self, f"{char_prefix}_cooldown_var"), bg=PASTEL_BG, activebackground=PASTEL_BG, highlightbackground=PASTEL_BG, relief="flat", borderwidth=0, font=self.text_font).grid(row=0, column=3, sticky='ew', padx=(2, 4))
         # 공격 관련
         row = 3
         tk.Label(parent, text="공격 속도:", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
@@ -984,7 +1029,11 @@ class CharacterGUI:
         double_shot_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'double_shot'))
         row += 1
         tk.Label(parent, text="트리플샷 확률 (%):", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
-        setattr(self, f"{char_prefix}_triple_shot_var", tk.StringVar(value=str(round(Character.DEFAULT_P_TRIPLE_SHOT*100, 2))))
+        if char_prefix == "char1":
+            triple_shot_default = 11.23
+        else:
+            triple_shot_default = 21.23
+        setattr(self, f"{char_prefix}_triple_shot_var", tk.StringVar(value=str(triple_shot_default)))
         triple_shot_entry = tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_triple_shot_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove")
         triple_shot_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         triple_shot_entry.bind('<FocusOut>', lambda e, prefix=char_prefix: self.limit_probability(prefix, 'triple_shot'))
@@ -1000,9 +1049,10 @@ class CharacterGUI:
     def save_initial_values(self):
         self.initial_values = {
             'char1_name': self.char1_name_var.get(),
-            'char1_awakening': self.char1_awakening_var.get(),
+            'char1_seventh_awakening': self.char1_seventh_awakening_var.get(),
             'char1_cooldown': self.char1_cooldown_var.get(),
             'char1_amplification': self.char1_amplification_var.get(),
+            'char1_third_awakening': self.char1_third_awakening_var.get(),
             'char1_attack_speed': self.char1_attack_speed_var.get(),
             'char1_attack_power': self.char1_attack_power_var.get(),
             'char1_critical': self.char1_critical_var.get(),
@@ -1012,9 +1062,10 @@ class CharacterGUI:
             'char1_critical_mult': self.char1_critical_mult_var.get(),
             'char1_strong_hit_mult': self.char1_strong_hit_mult_var.get(),
             'char2_name': self.char2_name_var.get(),
-            'char2_awakening': self.char2_awakening_var.get(),
+            'char2_seventh_awakening': self.char2_seventh_awakening_var.get(),
             'char2_cooldown': self.char2_cooldown_var.get(),
             'char2_amplification': self.char2_amplification_var.get(),
+            'char2_third_awakening': self.char2_third_awakening_var.get(),
             'char2_attack_speed': self.char2_attack_speed_var.get(),
             'char2_attack_power': self.char2_attack_power_var.get(),
             'char2_critical': self.char2_critical_var.get(),
@@ -1041,9 +1092,10 @@ class CharacterGUI:
         if vals is None:
             return
         self.char1_name_var.set(vals['char1_name'])
-        self.char1_awakening_var.set(vals['char1_awakening'])
+        self.char1_seventh_awakening_var.set(vals['char1_seventh_awakening'])
         self.char1_cooldown_var.set(vals['char1_cooldown'])
         self.char1_amplification_var.set(vals['char1_amplification'])
+        self.char1_third_awakening_var.set(vals['char1_third_awakening'])
         self.char1_attack_speed_var.set(vals['char1_attack_speed'])
         self.char1_attack_power_var.set(vals['char1_attack_power'])
         self.char1_critical_var.set(vals['char1_critical'])
@@ -1053,9 +1105,10 @@ class CharacterGUI:
         self.char1_critical_mult_var.set(vals['char1_critical_mult'])
         self.char1_strong_hit_mult_var.set(vals['char1_strong_hit_mult'])
         self.char2_name_var.set(vals['char2_name'])
-        self.char2_awakening_var.set(vals['char2_awakening'])
+        self.char2_seventh_awakening_var.set(vals['char2_seventh_awakening'])
         self.char2_cooldown_var.set(vals['char2_cooldown'])
         self.char2_amplification_var.set(vals['char2_amplification'])
+        self.char2_third_awakening_var.set(vals['char2_third_awakening'])
         self.char2_attack_speed_var.set(vals['char2_attack_speed'])
         self.char2_attack_power_var.set(vals['char2_attack_power'])
         self.char2_critical_var.set(vals['char2_critical'])
@@ -1079,7 +1132,7 @@ class CharacterGUI:
         """캐릭터 간 스탯 복사 (이름 제외)"""
         # 복사할 속성 목록
         attributes = [
-            'awakening', 'cooldown', 'amplification', 'attack_speed', 'attack_power',
+            'seventh_awakening', 'cooldown', 'amplification', 'third_awakening', 'attack_speed', 'attack_power',
             'critical', 'strong_hit', 'double_shot', 'triple_shot',
             'critical_mult', 'strong_hit_mult'
         ]
@@ -1103,9 +1156,10 @@ class CharacterGUI:
             char = Character(getattr(self, f"{char_prefix}_name_var").get())
             
             # 기본 설정
-            char.is_awakening = getattr(self, f"{char_prefix}_awakening_var").get()
+            char.is_seventh_awakening = getattr(self, f"{char_prefix}_seventh_awakening_var").get()
             char.is_cooldown = getattr(self, f"{char_prefix}_cooldown_var").get()
             char.is_amplification = getattr(self, f"{char_prefix}_amplification_var").get()
+            char.is_third_awakening = getattr(self, f"{char_prefix}_third_awakening_var").get()
             
             # 공격 관련 - 입력 검증
             attack_speed_value = getattr(self, f"{char_prefix}_attack_speed_var").get()
@@ -1135,7 +1189,7 @@ class CharacterGUI:
                 return None
             char.strong_hit_multiplier = float(strong_hit_mult_value) / 100
             
-            char.awakening_multiplier = AWAKENING_MULTIPLIER if char.is_awakening else 1
+            char.seventh_awakening_multiplier = SEVENTH_AWAKENING_MULTIPLIER if char.is_seventh_awakening else 1
             
             # 데미지 배율 (공통 설정 사용)
             char.damage_skill_1 = float(self.damage_1_var.get()) / 100

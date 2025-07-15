@@ -34,6 +34,7 @@
    ```
 2. EXE 생성:
    ```bash
+    pyarmor obfuscate --recursive main.py
     pyinstaller --noconsole --onefile --name DpmCalculator --icon=./assets/icon.ico main.py
    ```
    - `--noconsole`: 콘솔창 없이 GUI만 실행
