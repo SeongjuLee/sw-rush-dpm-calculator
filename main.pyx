@@ -9,7 +9,6 @@ import json
 import os
 
 # 상수
-VERSION = "v0.1.0-rc"
 COOLDOWN_REDUCTION_MULTIPLIER = 0.8
 SEVENTH_AWAKENING_MULTIPLIER = 1.2
 INSIGNIFICANT_DPM_DIFFERENCE_RATE_THRESHOLD = 0.2
@@ -29,7 +28,7 @@ if sys.platform.startswith('linux'):
 
 
 class Character:
-    DEFAULT_ATTACK_SPEED = 116
+    DEFAULT_ATTACK_SPEED = 130
     DEFAULT_ATTACK_POWER = 12.32
     DEFAULT_P_CRITICAL = 90.35 / 100
     DEFAULT_P_STRONG_HIT = 58.12 / 100
@@ -612,7 +611,7 @@ def compare_characters(char1, char2, minutes=0.5, simulations=10000, text_widget
 class CharacterGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"캐릭터 추가스펙 시뮬레이터 {VERSION}")
+        self.root.title("캐릭터 추가스펙 계산기")
         self.root.geometry("1x1000")
         self.root.update_idletasks()
         self.root.geometry("")
@@ -635,7 +634,6 @@ class CharacterGUI:
         style.configure("Korean.TCheckbutton", background=PASTEL_BG)
         style.configure("Korean.TButton", background=PASTEL_BG)
         
-        # self.setup_korean_font()
         self.create_widgets()
         self.root.after(100, self.auto_load_settings)
     
@@ -776,14 +774,14 @@ class CharacterGUI:
                 self.char1_cooldown_var.set(char1.get("cooldown", True))
                 self.char1_amplification_var.set(char1.get("amplification", False))
                 self.char1_third_awakening_var.set(char1.get("third_awakening", False))
-                self.char1_attack_speed_var.set(char1.get("attack_speed", str(Character.DEFAULT_ATTACK_SPEED)))
-                self.char1_attack_power_var.set(char1.get("attack_power", str(Character.DEFAULT_ATTACK_POWER)))
-                self.char1_critical_var.set(char1.get("critical", str(round(Character.DEFAULT_P_CRITICAL*100, 2))))
-                self.char1_strong_hit_var.set(char1.get("strong_hit", str(round(Character.DEFAULT_P_STRONG_HIT*100, 2))))
-                self.char1_double_shot_var.set(char1.get("double_shot", str(round(Character.DEFAULT_P_DOUBLE_SHOT*100, 2))))
-                self.char1_triple_shot_var.set(char1.get("triple_shot", str(round(Character.DEFAULT_P_TRIPLE_SHOT*100, 2))))
-                self.char1_critical_mult_var.set(char1.get("critical_mult", str(round(Character.DEFAULT_CRITICAL_MULTIPLIER*100, 2))))
-                self.char1_strong_hit_mult_var.set(char1.get("strong_hit_mult", str(round(Character.DEFAULT_STRONG_HIT_MULTIPLIER*100, 2))))
+                self.char1_attack_speed_var.set(char1.get("attack_speed", "129"))
+                self.char1_attack_power_var.set(char1.get("attack_power", "12.42"))
+                self.char1_critical_var.set(char1.get("critical", "88.08"))
+                self.char1_strong_hit_var.set(char1.get("strong_hit", "51.91"))
+                self.char1_double_shot_var.set(char1.get("double_shot", "22.36"))
+                self.char1_triple_shot_var.set(char1.get("triple_shot", "21.11"))
+                self.char1_critical_mult_var.set(char1.get("critical_mult", "1184.28"))
+                self.char1_strong_hit_mult_var.set(char1.get("strong_hit_mult", "158.03"))
             
             # 캐릭터 2 설정 불러오기
             if "char2" in settings:
@@ -793,14 +791,14 @@ class CharacterGUI:
                 self.char2_cooldown_var.set(char2.get("cooldown", True))
                 self.char2_amplification_var.set(char2.get("amplification", False))
                 self.char2_third_awakening_var.set(char2.get("third_awakening", False))
-                self.char2_attack_speed_var.set(char2.get("attack_speed", "130"))
-                self.char2_attack_power_var.set(char2.get("attack_power", str(Character.DEFAULT_ATTACK_POWER)))
-                self.char2_critical_var.set(char2.get("critical", str(round(Character.DEFAULT_P_CRITICAL*100, 2))))
-                self.char2_strong_hit_var.set(char2.get("strong_hit", str(round(Character.DEFAULT_P_STRONG_HIT*100, 2))))
-                self.char2_double_shot_var.set(char2.get("double_shot", str(round(Character.DEFAULT_P_DOUBLE_SHOT*100, 2))))
-                self.char2_triple_shot_var.set(char2.get("triple_shot", str(round(Character.DEFAULT_P_TRIPLE_SHOT*100, 2))))
-                self.char2_critical_mult_var.set(char2.get("critical_mult", str(round(Character.DEFAULT_CRITICAL_MULTIPLIER*100, 2))))
-                self.char2_strong_hit_mult_var.set(char2.get("strong_hit_mult", str(round(Character.DEFAULT_STRONG_HIT_MULTIPLIER*100, 2))))
+                self.char2_attack_speed_var.set(char2.get("attack_speed", "129"))
+                self.char2_attack_power_var.set(char2.get("attack_power", "12.42"))
+                self.char2_critical_var.set(char2.get("critical", "88.08"))
+                self.char2_strong_hit_var.set(char2.get("strong_hit", "51.91"))
+                self.char2_double_shot_var.set(char2.get("double_shot", "22.36"))
+                self.char2_triple_shot_var.set(char2.get("triple_shot", "21.11"))
+                self.char2_critical_mult_var.set(char2.get("critical_mult", "1184.28"))
+                self.char2_strong_hit_mult_var.set(char2.get("strong_hit_mult", "158.03"))
             
             # 공통 설정 불러오기
             if "common" in settings:
@@ -831,7 +829,7 @@ class CharacterGUI:
         """프로그램 시작 시 자동으로 설정 파일 불러오기"""
         if self.load_settings():
             print("프로그램 시작 시 설정 파일을 자동으로 불러왔습니다.")
-        # 설정 불러오기 완료 후 초기값 저장 (JSON에서 불러온 값이 초기값이 되도록)
+        # 설정 불러오기 후 초기값 저장 (JSON에서 불러온 값이 초기값이 되도록)
         self.save_initial_values()
     
     def validate_numeric_input(self, value, min_value=0, max_value=None, field_name="값"):
@@ -1004,11 +1002,7 @@ class CharacterGUI:
         # 공격 관련
         row = 3
         tk.Label(parent, text="공격 속도:", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))
-        if char_prefix == "char1":
-            attack_speed_default = Character.DEFAULT_ATTACK_SPEED
-        else:
-            attack_speed_default = 130  # 캐릭터 2의 기본 공격속도
-        setattr(self, f"{char_prefix}_attack_speed_var", tk.StringVar(value=str(attack_speed_default)))
+        setattr(self, f"{char_prefix}_attack_speed_var", tk.StringVar(value=str(Character.DEFAULT_ATTACK_SPEED)))
         tk.Entry(parent, textvariable=getattr(self, f"{char_prefix}_attack_speed_var"), width=12, font=self.text_font, justify='right', bg="white", relief="groove").grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(0, 2))
         row += 1
         tk.Label(parent, text="공격력 (M):", font=self.text_font, bg=PASTEL_BG).grid(row=row, column=0, sticky=tk.W, padx=(2, 24))

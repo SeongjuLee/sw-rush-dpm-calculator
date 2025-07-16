@@ -34,8 +34,11 @@
    ```
 2. EXE 생성:
    ```bash
-    pyarmor obfuscate --recursive main.py
-    pyinstaller --noconsole --onefile --name DpmCalculator --icon=./assets/icon.ico main.py
+   pip install cython
+   create setup.py
+   cp main.py main.pyx
+   python setup.py build_ext --inplace
+   pyinstaller --noconsole --onefile --name DpmCalculator --icon=./assets/icon.ico main.pyx
    ```
    - `--noconsole`: 콘솔창 없이 GUI만 실행
    - `--onefile`: 단일 EXE로 생성
